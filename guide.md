@@ -45,10 +45,10 @@ Other handy things:
 You only need this on a new computer or after deleting things. Everything below downloads from the internet **once**; after that the app works offline.
 
 1. Install **Ollama** from https://ollama.com/download and open it once (a llama icon appears in the menu bar / system tray).
-2. Install **Node.js 18+** and **Python 3.10+**:
+2. Install **Node.js** (the current LTS from nodejs.org; at least 20.19 or 22.12) and **Python 3.10+**:
    * Mac: `brew install node python`
    * Windows: `winget install OpenJS.NodeJS.LTS` and `winget install Python.Python.3.12` (when using the python.org installer, tick **Add python.exe to PATH**). Close and reopen the terminal afterwards.
-   * Linux: your package manager, e.g. `sudo apt install nodejs npm python3 python3-venv`
+   * Linux: Node.js from https://nodejs.org (the `apt` package is usually too old), and Python with `sudo apt install python3 python3-venv`
 3. In the terminal, in the project folder:
 
    | Mac / Linux | Windows | What it does |

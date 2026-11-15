@@ -9,7 +9,7 @@ const url = pathToFileURL(join(ROOT, "scripts", "setup-required.html")).href;
 try {
   await page.goto(`${url}?need=python,node`, { waitUntil: "networkidle0" });
   const text = await textOf(page);
-  check(/One more thing before AI Interviewer can start/.test(text) && /Python 3\.10 or newer/.test(text) && /Node\.js 18 or newer/.test(text), "it names exactly what is missing");
+  check(/One more thing before AI Interviewer can start/.test(text) && /Python 3\.10 or newer/.test(text) && /Node\.js 20\.19\+ or 22\.12\+/.test(text), "it names exactly what is missing");
   const mac = (await page.$$eval(".need code", (c) => c.map((x) => x.textContent))).join("|");
   check(/brew install python/.test(mac) && /brew install node/.test(mac), `macOS steps (Homebrew) are shown for a Mac (${mac})`);
   await page.evaluate(() => document.querySelector('[data-os="windows"]').click());

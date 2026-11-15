@@ -8,7 +8,7 @@ follow, see [CONTRIBUTING.md](../CONTRIBUTING.md). For how the pieces fit togeth
 | Tool | Needed for | Notes |
 |---|---|---|
 | Python 3.10 or newer | backend, launcher | CI tests 3.10 and 3.12. |
-| Node.js 18 or newer | frontend | CI uses Node 22. |
+| Node.js 22.12+ (20.19+ is enough to run the app, not the frontend tests) | frontend | CI uses Node 22. Linux distribution packages are often too old: use the LTS from nodejs.org. |
 | Git | | |
 | [Ollama](https://ollama.com/download) | real interviews with a local model | Optional for development: the backend tests mock the model, and cloud mode needs no local Ollama. |
 | Google Chrome | the optional real-browser e2e scripts only | |
@@ -155,8 +155,10 @@ the pull request: the quality of the 2.0 grading with a real model has not been 
 
 - **Logs:** `logs/backend.log` (ids, sizes and timings; never answers, resume text or API keys). In dev mode also `logs/frontend.log`.
   Run `tail -f logs/backend.log` while you click around.
-- **API explorer:** with the app running, <http://localhost:3000/api/docs> is the interactive OpenAPI UI (in dev mode the proxy serves
-  it on :3000; the backend itself is on :8000). The raw schema is at `/api/openapi.json`.
+- **API explorer:** set `API_DOCS=1` in `.env` and restart; then <http://localhost:3000/api/docs> is the interactive OpenAPI UI (in dev
+  mode the proxy serves it on :3000; the backend itself is on :8000). It is off by default because that page loads Swagger UI's
+  JavaScript and CSS from a public CDN, which would break the app's "only localhost" promise. The raw schema at `/api/openapi.json`
+  is always available and fully local.
 - **Health:** `curl -s localhost:3000/api/health` reports the bind address, Ollama and model status, voice and speech-to-text status, and memory.
 - **Errors** from the API have the shape `{"error": {"code": "...", "message": "..."}}` (see `backend/app/errors.py`).
 - **Run the backend in the foreground** to see everything: stop the launcher's copy, then from `backend/` run

@@ -20,13 +20,13 @@ repos:
     hooks:
       - id: docs-links
         name: Markdown links, images and anchors
-        entry: python3 scripts/check_docs.py
-        language: system
+        entry: python scripts/check_docs.py      # `python` exists in pre-commit's own environment on every OS
+        language: python
         pass_filenames: false
         files: \.md$
       - id: eslint
         name: ESLint (frontend)
-        entry: bash -c 'cd frontend && npx eslint --max-warnings 0 src'
+        entry: npm --prefix frontend run lint     # no shell needed, so it also runs on Windows
         language: system
         pass_filenames: false
         files: ^frontend/src/.*\.(ts|tsx)$

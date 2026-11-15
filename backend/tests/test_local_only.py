@@ -116,3 +116,21 @@ def test_cloud_url_must_be_https_unless_it_is_a_loopback_test_server(monkeypatch
     else:
         with pytest.raises(RuntimeError, match="OLLAMA_CLOUD_URL"):
             Settings.from_env()
+
+
+def test_no_page_loads_anything_from_a_cdn_by_default(client):
+    """FastAPI's Swagger UI and ReDoc pages pull JS/CSS from cdn.jsdelivr.net: they must be off unless a developer opts in."""
+    for path in ("/api/docs", "/redoc", "/docs"):
+        r = client.get(path)
+        assert r.status_code == 404 or "cdn." not in r.text, path
+    assert client.get("/api/openapi.json").status_code == 200
+
+
+def test_api_explorer_is_available_when_a_developer_opts_in(tmp_path, fake):
+    from app.deps import build_container
+    from app.main import create_app
+    from conftest import InlineExecutor, make_client_for, make_settings
+    from fastapi.testclient import TestClient
+    s = make_settings(tmp_path, api_docs=True)
+    c = TestClient(create_app(s, build_container(s, ollama=make_client_for(s, fake), executor=InlineExecutor())), base_url="http://127.0.0.1:3000")
+    assert c.get("/api/docs").status_code == 200

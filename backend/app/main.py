@@ -40,7 +40,8 @@ def create_app(settings: Optional[Settings] = None, container: Optional[Containe
     settings = settings or Settings.from_env()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)  # request URLs only, but keep logs quiet
-    app = FastAPI(title="Local AI Interviewer", version=__version__, docs_url="/api/docs", openapi_url="/api/openapi.json")
+    app = FastAPI(title="Local AI Interviewer", version=__version__, openapi_url="/api/openapi.json", redoc_url=None,
+                  docs_url="/api/docs" if settings.api_docs else None)   # Swagger UI pulls JS/CSS from a CDN: developers opt in
     app.state.c = container or build_container(settings)
 
     @app.middleware("http")

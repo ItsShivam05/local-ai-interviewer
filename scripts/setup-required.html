@@ -45,10 +45,10 @@
       macos: [["Download the installer (pick the newest version)", "https://www.python.org/downloads/"], ["or, with Homebrew", null, "brew install python"]],
       windows: [["In Command Prompt or PowerShell", null, "winget install Python.Python.3.12"], ["or download it (tick “Add python.exe to PATH” in the installer)", "https://www.python.org/downloads/"]],
       linux: [["Debian / Ubuntu", null, "sudo apt install python3 python3-venv"], ["Fedora", null, "sudo dnf install python3"]] },
-    node: { label: "Node.js 18 or newer", why: "builds the web page once",
+    node: { label: "Node.js 20.19+ or 22.12+ (the current LTS is fine)", why: "builds the web page once",
       macos: [["Download the LTS installer", "https://nodejs.org/"], ["or, with Homebrew", null, "brew install node"]],
       windows: [["In Command Prompt or PowerShell", null, "winget install OpenJS.NodeJS.LTS"], ["or download the LTS installer", "https://nodejs.org/"]],
-      linux: [["Debian / Ubuntu", null, "sudo apt install nodejs npm"], ["or download the LTS installer", "https://nodejs.org/"]] }
+      linux: [["Download the LTS (your distribution's nodejs package is often too old)", "https://nodejs.org/en/download"]] }
   };
   var START = { macos: "./start.sh", linux: "./start.sh", windows: "start.bat" };
   var need = (new URLSearchParams(location.search).get("need") || "python").split(",").filter(function (k) { return STEPS[k]; });

@@ -14,8 +14,12 @@ together is in [docs/architecture.md](docs/architecture.md).
 ./start.sh --dev            # backend on :8000 + Vite on :3000 (hot reload for the frontend; restart to pick up Python changes)
 ```
 
+Windows: `start.bat --dev`. In the commands below use `backend\.venv\Scripts\python` instead of `backend/.venv/bin/python`, and
+`python` instead of `python3`. For the optional real-model tests set the variable first: `set RUN_INTEGRATION=1` (Command Prompt) or
+`$env:RUN_INTEGRATION = "1"` (PowerShell).
+
 Backend: Python >= 3.10, dependencies in `backend/requirements*.txt` (a virtualenv is created in `backend/.venv` by `start.sh`).
-Frontend: Node >= 18, `cd frontend && npm ci`.
+Frontend: Node 22.12+ for development (the frontend tests need it; running the app needs 20.19+ or 22.12+), then `cd frontend && npm ci`.
 
 ## Before you open a pull request
 

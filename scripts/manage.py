@@ -183,7 +183,7 @@ def install_hint(what: str) -> str:
     if WINDOWS:
         return {"node": "winget install OpenJS.NodeJS.LTS  (or https://nodejs.org)", "python": "winget install Python.Python.3.12  (or https://python.org)",
                 "ollama": "https://ollama.com/download/windows"}[what]
-    return {"node": "your package manager, e.g. sudo apt install nodejs npm  (or https://nodejs.org)",
+    return {"node": "the LTS from https://nodejs.org/en/download (distribution packages such as apt's nodejs are often too old)",
             "python": "your package manager, e.g. sudo apt install python3 python3-venv",
             "ollama": "curl -fsSL https://ollama.com/install.sh | sh"}[what]
 
@@ -202,14 +202,30 @@ def find_ollama() -> Optional[str]:
     return next((str(c) for c in candidates if c.is_file()), None)
 
 
-def node_major() -> Optional[int]:
+NODE_REQUIREMENT = "Node.js 20.19+ or 22.12+"     # what the UI build tool (Vite) supports; keep in sync with frontend/package.json "engines"
+
+
+def node_version() -> Optional[tuple[int, int]]:
+    """(major, minor) of the installed Node.js, or None."""
     node = shutil.which("node")
     if not node:
         return None
     try:
-        return int(subprocess.check_output([node, "-p", "process.versions.node.split('.')[0]"], text=True, timeout=15).strip())
+        out = subprocess.check_output([node, "-p", "process.versions.node"], text=True, timeout=15).strip()
+        major, minor = out.split(".")[:2]
+        return int(major), int(minor)
     except Exception:
         return None
+
+
+def node_major() -> Optional[int]:
+    v = node_version()
+    return v[0] if v else None
+
+
+def node_supported(v: tuple[int, int]) -> bool:
+    """Vite needs ^20.19 || >=22.12 (Node 21 and 22.0-22.11 are not supported)."""
+    return v >= (22, 12) or (20, 19) <= v < (21, 0)
 
 
 # ------------------------------------------------------------------ processes
@@ -445,13 +461,13 @@ def cmd_start(args: argparse.Namespace) -> int:
     if not python_ok():
         bad(f"Python 3.10 or newer is required (this is {platform.python_version()}): {install_hint('python')}")
         return 1
-    major = node_major()
-    if major is None or not shutil.which("npm"):
-        bad(f"Node.js 18 or newer is required: {install_hint('node')}")
+    nv = node_version()
+    if nv is None or not shutil.which("npm"):
+        bad(f"{NODE_REQUIREMENT} is required: {install_hint('node')}")
         open_setup_help("node")
         return 1
-    if major < 18:
-        bad(f"Node.js 18 or newer is required (found {major}): {install_hint('node')}")
+    if not node_supported(nv):
+        bad(f"{NODE_REQUIREMENT} is required (found {nv[0]}.{nv[1]}): {install_hint('node')}")
         open_setup_help("node")
         return 1
     npm = shutil.which("npm") or "npm"
@@ -565,15 +581,15 @@ def cmd_check(_: argparse.Namespace) -> int:
         warn("TTS_PROVIDER=phonon needs an Apple Silicon Mac; use TTS_PROVIDER=auto here.")
     info(f"  Voice: {'Phonon (Apple Silicon) if installed, otherwise ' if APPLE_SILICON else ''}this computer's offline voices through the browser")
 
-    major = node_major()
-    if major is None:
+    nv = node_version()
+    if nv is None:
         bad(f"Node.js not found: {install_hint('node')}")
         fail = 1
-    elif major < 18:
-        bad(f"Node >= 18 required (found {major})")
+    elif not node_supported(nv):
+        bad(f"{NODE_REQUIREMENT} required (found {nv[0]}.{nv[1]}): {install_hint('node')}")
         fail = 1
     else:
-        ok(f"Node {major}.x")
+        ok(f"Node {nv[0]}.{nv[1]}")
     if python_ok():
         ok(f"Python {platform.python_version()} ({sys.executable})")
     else:

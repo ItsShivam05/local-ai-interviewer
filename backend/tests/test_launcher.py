@@ -233,3 +233,16 @@ def test_ollama_autostart_can_be_switched_off(m, monkeypatch):
     monkeypatch.delenv("OLLAMA_AUTOSTART")
     monkeypatch.setattr(m, "ollama_up", lambda: bool(started))
     assert m.ensure_ollama() is True and len(started) == 1                  # the default is unchanged: it is started for you
+
+
+def test_node_version_rule_matches_what_vite_supports(m):
+    """Vite 8 supports ^20.19 || >=22.12; Node 18, 20.18, 21 and 22.0-22.11 must be refused (they pass a major-only check)."""
+    ok = [(20, 19), (20, 30), (22, 12), (23, 0), (24, 1)]
+    bad = [(18, 20), (20, 18), (21, 7), (22, 0), (22, 11)]
+    assert all(m.node_supported(v) for v in ok) and not any(m.node_supported(v) for v in bad)
+
+
+def test_node_requirement_matches_package_json_engines(m):
+    import json
+    engines = json.loads((m.ROOT / "frontend" / "package.json").read_text(encoding="utf-8"))["engines"]["node"]
+    assert engines == "^20.19.0 || >=22.12.0" and "20.19" in m.NODE_REQUIREMENT and "22.12" in m.NODE_REQUIREMENT

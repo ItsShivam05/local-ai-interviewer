@@ -9,7 +9,8 @@ so for now that means `main`. Once releases exist, fixes will go into the newest
 
 Please **do not open a public issue**. Use GitHub's private vulnerability reporting
 ([report one here](https://github.com/Yuvakunaal/local-ai-interviewer/security/advisories/new), or *Security, Report a vulnerability*
-on the repository). Include steps to reproduce, the affected version or commit (`git rev-parse --short HEAD`) and the impact.
+on the repository). If that page says private reporting is not available, open an issue that says only "I would like to report a
+security issue privately" — no details — and the maintainer will arrange a private channel. Include steps to reproduce, the affected version or commit (`git rev-parse --short HEAD`) and the impact.
 You should get an acknowledgement within a week. This is a best-effort promise from a single maintainer, not a service-level
 agreement.
 

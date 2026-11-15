@@ -12,7 +12,7 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}     # never cancel runs on main (every commit keeps a status)
 
 permissions:
   contents: read
@@ -38,7 +38,11 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
-      - run: pipx run pip-audit==2.9.0 -r backend/requirements.txt --strict
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+      - name: Install pip-audit (the version range in backend/requirements-dev.txt)
+        run: python -m pip install "$(grep -E '^pip-audit' backend/requirements-dev.txt | cut -d'#' -f1 | xargs)"
+      - run: python -m pip_audit -r backend/requirements.txt --strict
 
   npm-audit:
     name: Frontend dependencies (npm audit)

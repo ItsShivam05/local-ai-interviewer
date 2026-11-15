@@ -10,7 +10,7 @@
 [![Security](https://github.com/Yuvakunaal/local-ai-interviewer/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/Yuvakunaal/local-ai-interviewer/actions/workflows/security.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776AB.svg)
-![Node 18+](https://img.shields.io/badge/node-18%2B-339933.svg)
+![Node 20.19+ or 22.12+](https://img.shields.io/badge/node-20.19%2B%20%7C%2022.12%2B-339933.svg)
 ![Runs locally with Ollama](https://img.shields.io/badge/runs%20locally-Ollama-black.svg)
 
 [Quick start](#quick-start) · [Features](#features) · [How it works](#how-it-works) · [Docs](docs/README.md) · [Contributing](CONTRIBUTING.md) · [Roadmap](ROADMAP.md) · [Security](SECURITY.md)
@@ -37,7 +37,7 @@ cd local-ai-interviewer
 ./start.sh --open     # installs dependencies on first run, builds the UI, starts http://localhost:3000 and opens it (Windows: start.bat always opens it)
 ```
 
-You need Python ≥ 3.10, Node ≥ 18, [Ollama](https://ollama.com/download) and Chrome or Edge. Full instructions: [§4 Install and run](#4-install-and-run).
+You need Python ≥ 3.10, Node.js 20.19+ or 22.12+ (the current LTS is fine), [Ollama](https://ollama.com/download) and Chrome or Edge. Full instructions: [§4 Install and run](#4-install-and-run).
 **New here? Read [`guide.md`](guide.md)** — a simple step-by-step from setup to your first interview.
 
 ## Features
@@ -148,7 +148,7 @@ Everything else — the LLM, grading, follow-ups, reports, optional Whisper micr
 
 In local mode the backend sets `HF_HUB_OFFLINE=1`, refuses non-loopback Ollama URLs, and the UI uses system fonts and no CDN.
 
-Required on every platform: Node ≥ 18, Python ≥ 3.10, [Ollama](https://ollama.com/download), and Chrome or Edge. About 5 GB free disk and 8 GB RAM (see §7).
+Required on every platform: Node.js 20.19+ or 22.12+ (the current LTS; Linux distribution packages are often older — use nodejs.org), Python ≥ 3.10, [Ollama](https://ollama.com/download), and Chrome or Edge. About 5 GB free disk and 8 GB RAM (see §7).
 
 ## 4. Install and run
 

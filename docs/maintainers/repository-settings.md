@@ -61,7 +61,8 @@ Open the repository, then **Settings** (the tab at the right of the repository's
 
 - [ ] Run the **Sync labels** workflow once: *Actions, Sync labels, Run workflow*. It creates or updates the labels in
   `.github/labels.yml` and never deletes others. Re-run it after editing that file. The issue templates, Dependabot and the release
-  notes categories use these labels.
+  notes categories use these labels. **Do this right after merging:** Dependabot opens its first pull requests on the next Monday and
+  can only attach labels that exist (today the repository has only GitHub's default labels).
 
 ## Actions
 
@@ -78,8 +79,15 @@ Open the repository, then **Settings** (the tab at the right of the repository's
 
 Why: usage questions, half-formed ideas and "here is what I built with it" posts do not belong in the issue tracker, which is for
 work that can be closed. Separating them keeps the issue list actionable, lets answers be marked and found later, and gives
-newcomers a lower-pressure place to ask. [SUPPORT.md](../../SUPPORT.md) and the issue chooser mention Discussions "if enabled", so
-nothing breaks if you decide against it; in that case remove the Discussions link from `.github/ISSUE_TEMPLATE/config.yml`.
+newcomers a lower-pressure place to ask. [SUPPORT.md](../../SUPPORT.md) mentions Discussions "if enabled", so nothing breaks if you
+decide against it. The issue chooser deliberately has **no** Discussions link yet (it would 404); after enabling Discussions, add this
+entry under `contact_links` in `.github/ISSUE_TEMPLATE/config.yml`:
+
+```yaml
+  - name: Questions and ideas
+    url: https://github.com/Yuvakunaal/local-ai-interviewer/discussions
+    about: Ask how-to questions or float an idea.
+```
 
 ## Projects and good first issues
 

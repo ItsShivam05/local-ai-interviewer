@@ -80,6 +80,7 @@ class Settings:
     tts_timeout_s: int = 60
     audio_cache_mb: int = 200
     stt_enabled: bool = True
+    api_docs: bool = False                     # /api/docs (Swagger UI) loads its JS/CSS from a CDN, so it is off unless API_DOCS=1
     cloud_url: str = "https://ollama.com"       # Ollama cloud API (used ONLY when the user switches to cloud mode and consents)
     cloud_timeout_s: int = 150
     cloud_idle_timeout_s: int = 90
@@ -149,6 +150,7 @@ class Settings:
             tts_timeout_s=_env_int("TTS_TIMEOUT_S", 60),
             audio_cache_mb=_env_int("AUDIO_CACHE_MB", 200),
             stt_enabled=os.environ.get("STT_ENABLED", "1") != "0",
+            api_docs=os.environ.get("API_DOCS", "0") == "1",
             cloud_url=cloud_url,
             cloud_timeout_s=_env_int("CLOUD_TIMEOUT_S", 150),
             cloud_idle_timeout_s=_env_int("CLOUD_IDLE_TIMEOUT_S", 90),

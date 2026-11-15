@@ -20,11 +20,16 @@ Planned as 2.0.0 (database schema v6; scores of categorised questions change, se
   issue forms, pull request template, governance and developer documentation, real screenshots and a social preview image.
 
 ### Fixed
+- The documented and launcher-enforced Node.js minimum was 18, but the build tool needs 20.19+ or 22.12+ (and the frontend tests
+  22.12+): users on Node 18–20.18 or 22.0–22.11 passed `check` and then failed to build. The launcher now checks major.minor, the
+  docs say 20.19+/22.12+, `frontend/package.json` declares `engines`, and the Linux hint no longer suggests the (too old) apt package.
 - Two `useMemo` hooks recomputed on every render; an unused value and a missing exception chain in the backend; a malformed
   `eslint-disable` comment.
 - `.env.example` now documents `CLOUD_TIMEOUT_S`, `CLOUD_IDLE_TIMEOUT_S`, `CLOUD_MAX_TOKENS` and `ALLOW_NON_LOCAL_OLLAMA`.
 
 ### Security
+- The API explorer pages (`/api/docs`, `/redoc`) loaded JavaScript and CSS from a public CDN, contrary to the "only localhost"
+  promise. They are now off by default; developers can enable `/api/docs` with `API_DOCS=1`. `/api/openapi.json` is unchanged.
 - `puppeteer-core` (development only, used by the e2e scripts) upgraded 24 → 25, removing two high-severity transitive advisories
   (`basic-ftp`, `extract-zip`) that were reachable only through code paths the scripts never use.
 - Resume lines that look like instructions to an AI are flagged and excluded from offline questions and excerpts.

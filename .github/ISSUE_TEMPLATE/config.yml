@@ -3,9 +3,7 @@ contact_links:
   - name: Security vulnerability
     url: https://github.com/Yuvakunaal/local-ai-interviewer/security/advisories/new
     about: Please report security issues privately, not as a public issue.
-  - name: Questions and ideas (Discussions, if enabled)
-    url: https://github.com/Yuvakunaal/local-ai-interviewer/discussions
-    about: Ask how-to questions or float an idea. If the repository has no Discussions tab yet, open an issue instead.
+# Add a Discussions link here once Discussions is enabled (docs/maintainers/repository-settings.md); it would 404 before that.
   - name: Documentation
     url: https://github.com/Yuvakunaal/local-ai-interviewer/blob/main/docs/README.md
     about: Troubleshooting is in README section 9; the docs index lists everything else.
