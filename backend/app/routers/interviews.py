@@ -93,8 +93,10 @@ def regenerate(iid: int, request: Request):
 
 
 @router.get("/{iid}/report/export")
-def export(iid: int, request: Request, format: Literal["md", "json", "pdf"] = "md"):
+def export(iid: int, request: Request, format: Literal["md", "json", "pdf"] = "md", redact: bool = False):
     data = reports.get_report(request.app.state.c.db, iid)
+    if redact:                       # shareable copy: no answers, quotes or resume excerpts
+        data = reports.redact(data)
     name = f"interview-report-{iid}"
     if format == "pdf":
         from ..services import report_pdf

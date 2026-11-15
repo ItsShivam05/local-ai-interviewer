@@ -3,10 +3,17 @@ from __future__ import annotations
 import platform
 from typing import Any
 
+import os
+import sqlite3
+import tempfile
+
 from fastapi import APIRouter, BackgroundTasks, Request
+from fastapi.responses import FileResponse
 
 from ..config import setup_cmd
 from ..services.ollama import LLMError
+from ..db import utcnow
+from ..services import eval_profiles
 from ..services.stats import build_stats
 from ..services.sysmem import memory_advice, read_memory
 from ..services.usage import loaded_models
@@ -140,3 +147,32 @@ def usage(request: Request, limit: int = 30, range: str = "all", provider: str =
 @router.delete("/usage")
 def clear_usage(request: Request) -> dict[str, int]:
     return {"deleted": request.app.state.c.usage.clear()}
+
+
+@router.get("/evaluation/profiles")
+def evaluation_profiles() -> dict[str, Any]:
+    """The evaluation profiles (dimensions, weights, meanings) used to grade answers. Read-only; weights are re-normalised per answer."""
+    return {"version": eval_profiles.PROFILES_VERSION, "profiles": eval_profiles.describe_profiles(),
+            "note": "Your rubric weights in Settings scale the matching dimensions of every profile."}
+
+
+@router.get("/backup")
+def backup(request: Request, background: BackgroundTasks) -> FileResponse:
+    """A consistent copy of the whole database (SQLite online backup), downloaded to this computer only.
+    It contains your answers, reports, resumes' text and any saved cloud API key: keep it private."""
+    db = request.app.state.c.db
+    fd, tmp = tempfile.mkstemp(prefix="interviewer-backup-", suffix=".sqlite3")
+    os.close(fd)
+    try:
+        dst = sqlite3.connect(tmp)
+        with db.read() as src:
+            src.backup(dst)
+        dst.close()
+        os.chmod(tmp, 0o600)
+    except BaseException:
+        os.unlink(tmp)
+        raise
+    background.add_task(os.unlink, tmp)
+    stamp = utcnow()[:10]
+    return FileResponse(tmp, media_type="application/vnd.sqlite3", filename=f"interviewer-backup-{stamp}.sqlite3",
+                        headers={"Cache-Control": "no-store"})

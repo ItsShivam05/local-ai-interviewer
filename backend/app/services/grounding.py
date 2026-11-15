@@ -143,7 +143,8 @@ def ground(ev: LLMEvaluation, *, answers: list[str], non_attempt: bool) -> Groun
         if grounded and dims.correctness >= 8:
             flags.append({"code": "high_correctness_with_errors", "message": "Correctness was scored high although a verified error was found; confidence lowered."})
             confidence = "low" if confidence == "low" else "medium"
-        if not grounded and not unverified and ev.correct_points and dims.correctness <= 3:
+        # Requires >= 2 correct points and no claimed error at all (verified or not), so a forgotten misconception is not "corrected" away.
+        if not grounded and not unverified and len(ev.correct_points) >= 2 and dims.correctness <= 3 and confidence != "low":
             # Nothing said was shown to be wrong: low marks belong under completeness, not correctness.
             adjustments.append(f"Correctness raised from {dims.correctness} to 5: no incorrect statement was identified, so the gaps are scored under completeness instead.")
             flags.append({"code": "incomplete_scored_as_incorrect", "message": "The answer was incomplete rather than wrong."})

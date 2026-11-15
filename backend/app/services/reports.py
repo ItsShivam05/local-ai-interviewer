@@ -63,7 +63,9 @@ def _cluster(entries: list[tuple[str, int]], threshold: float = 0.5) -> list[dic
 
 
 SKILLS = [("correctness", "Technical correctness"), ("completeness", "Completeness"), ("depth", "Depth of understanding"),
-          ("practical_application", "Practical application"), ("clarity", "Clarity & reasoning"), ("production_awareness", "Production awareness")]
+          ("practical_application", "Practical application"), ("clarity", "Clarity & reasoning"), ("production_awareness", "Production awareness"),
+          ("conceptual_understanding", "Conceptual understanding"), ("problem_solving", "Problem-solving"), ("edge_cases", "Edge-case awareness"),
+          ("tradeoffs", "Trade-off analysis")]
 
 
 def skill_averages(turns_by_question: list[list[dict]]) -> list[dict[str, Any]]:
@@ -81,7 +83,10 @@ def skill_averages(turns_by_question: list[list[dict]]) -> list[dict[str, Any]]:
                 if key == "production_awareness" and not ev.get("production_relevant"):
                     continue
                 sums[key].append(float(dims[key]))
-    return [{"key": k, "label": label, "average": round(sum(v) / len(v), 1) if v else None, "answers": len(v)} for (k, label), v in zip(SKILLS, sums.values())]
+    core = {"correctness", "completeness", "depth", "practical_application", "clarity", "production_awareness"}
+    # the six v1 skills are always listed (stable shape); profile-specific ones only when at least one answer was scored on them
+    return [{"key": k, "label": label, "average": round(sum(v) / len(v), 1) if v else None, "answers": len(v)}
+            for (k, label), v in zip(SKILLS, sums.values()) if k in core or v]
 
 
 def build_report(c: sqlite3.Connection, iid: int) -> dict[str, Any]:
@@ -152,7 +157,125 @@ def build_report(c: sqlite3.Connection, iid: int) -> dict[str, Any]:
     claims = resume_claims(questions)
     if claims or any(q["source"] == "resume" for q in questions):     # older reports (no resume questions) keep exactly their old shape
         out["resume_claims"] = claims
+    out["intelligence"] = intelligence(questions, out["skills"])
+    keys = iv.keys()
+    plan = json.loads(iv["plan_json"]) if "plan_json" in keys and iv["plan_json"] else {}
+    out["interview"]["end_reason"] = iv["end_reason"] if "end_reason" in keys else None
+    out["adaptive"] = adaptive_summary(c, iv) if out["interview"]["config"].get("mode") == "adaptive" else None
+    coverage = resume_coverage(plan, questions)
+    if coverage:
+        out["resume_coverage"] = coverage
     return out
+
+
+# ----------------------------------------------------------------------- Interview Intelligence 2.0 analytics
+CONCEPTUAL_DIMS = ("correctness", "conceptual_understanding", "depth")
+PRACTICAL_DIMS = ("practical_application", "problem_solving", "edge_cases", "production_awareness")
+SKILL_ADVICE = {
+    "correctness": "Re-learn the fundamentals behind the questions you got wrong; check each claim you make against a reliable source.",
+    "completeness": "Before answering, list the 3-4 essential points the question needs, then cover each one.",
+    "depth": "After each 'what', add the 'why' and 'how': explain the mechanism, not just the definition.",
+    "practical_application": "Prepare one concrete example from your own work for each core concept.",
+    "clarity": "Structure answers: one-line answer first, then reasons, then an example. Practise out loud.",
+    "production_awareness": "For every design, say how it is monitored, how it fails and what it costs at scale.",
+    "conceptual_understanding": "Draw the underlying model (data flow, memory, set semantics) before memorising syntax.",
+    "problem_solving": "Talk through your approach: restate the problem, outline options, pick one and justify it.",
+    "edge_cases": "Practise naming edge cases out loud: empty input, NULLs, duplicates, concurrency, limits, failures.",
+    "tradeoffs": "For each choice, name one alternative and compare them on cost, complexity and risk.",
+}
+CLASS_ORDER = ["correct", "correct_incomplete", "partially_correct", "incorrect", "no_attempt", "uncertain"]
+
+
+def _evaluated_turns(questions: list[dict]):
+    for q in questions:
+        for t in q["turns"]:
+            if t.get("status") == "evaluated" and t.get("evaluation"):
+                yield q, t, t["evaluation"]
+
+
+def _avg(values: list[float]) -> Optional[float]:
+    return round(sum(values) / len(values), 1) if values else None
+
+
+def intelligence(questions: list[dict], skills: list[dict]) -> dict[str, Any]:
+    """Deterministic analytics over the stored evaluations. Older evaluations (before v6) simply contribute less detail."""
+    classes: Counter = Counter()
+    by_diff: dict[str, list[float]] = {}
+    conceptual: list[float] = []
+    practical: list[float] = []
+    profiles: dict[str, dict[str, Any]] = {}
+    evidence_total = evidence_verified = 0
+    flags: Counter = Counter()
+    adjustments: list[str] = []
+    unverified = 0
+    for q, t, ev in _evaluated_turns(questions):
+        if ev.get("classification"):
+            classes[ev["classification"]] += 1
+        dims = ev.get("dimension_scores") or {}
+        conceptual += [float(dims[d]) for d in CONCEPTUAL_DIMS if dims.get(d) is not None]
+        practical += [float(dims[d]) for d in PRACTICAL_DIMS if dims.get(d) is not None and (d != "production_awareness" or ev.get("production_relevant"))]
+        if ev.get("profile"):
+            p = profiles.setdefault(ev["profile"], {"key": ev["profile"], "label": ev.get("profile_label") or ev["profile"], "answers": 0, "scores": []})
+            p["answers"] += 1
+            if t.get("score") is not None:
+                p["scores"].append(float(t["score"]))
+        for e in ev.get("evidence") or []:
+            evidence_total += 1
+            evidence_verified += 1 if e.get("verified") else 0
+        for f in ev.get("consistency_flags") or []:
+            flags[f.get("code", "other")] += 1
+        adjustments += [f"Q{q['position']}: {a}" for a in ev.get("adjustments") or []]
+        unverified += len(ev.get("unverified_misconceptions") or [])
+    for q in questions:
+        if q["score"] is not None:
+            by_diff.setdefault((q["difficulty"] or "unrated").lower(), []).append(q["score"])
+    difficulty = [{"difficulty": d, "questions": len(v), "average_score": _avg(v)} for d, v in
+                  sorted(by_diff.items(), key=lambda kv: ["easy", "medium", "hard", "unrated"].index(kv[0]) if kv[0] in ("easy", "medium", "hard", "unrated") else 9)]
+    c_avg, p_avg = _avg(conceptual), _avg(practical)
+    balance = None
+    if c_avg is not None and p_avg is not None:
+        balance = ("Practical application lags conceptual understanding." if c_avg - p_avg >= 1.5 else
+                   "Conceptual understanding lags practical experience." if p_avg - c_avg >= 1.5 else "Conceptual and practical skills are balanced.")
+    scored_skills = [k for k in skills if k["average"] is not None and k["answers"] > 0]
+    weakest = sorted(scored_skills, key=lambda k: k["average"])[:3]
+    plan = [{"skill": k["label"], "average": k["average"], "action": SKILL_ADVICE.get(k["key"], "")} for k in weakest if k["average"] < 7.5]
+    return {
+        "classifications": [{"key": k, "count": classes[k]} for k in CLASS_ORDER if classes.get(k)],
+        "difficulty": difficulty,
+        "conceptual_vs_practical": {"conceptual": c_avg, "practical": p_avg, "summary": balance},
+        "profiles": [{**{k: v for k, v in p.items() if k != "scores"}, "average_score": _avg(p["scores"])} for p in profiles.values()],
+        "evidence": {"quotes": evidence_total, "verified": evidence_verified, "unverified_misconceptions": unverified},
+        "consistency": {"flags": [{"code": k, "count": v} for k, v in flags.most_common()], "adjustments": adjustments[:10]},
+        "learning_plan": plan,
+    }
+
+
+def adaptive_summary(c: sqlite3.Connection, iv) -> dict[str, Any]:
+    config = json.loads(iv["config_json"])
+    state = json.loads(iv["adaptive_json"]) if iv["adaptive_json"] else {}
+    events = [dict(r) for r in c.execute("""SELECT e.kind, e.decision, e.reason, e.level_before, e.level_after, e.topic, e.created_at,
+                                            (SELECT position FROM interview_items WHERE id=e.item_id) AS position
+                                            FROM adaptive_events e WHERE e.interview_id=? ORDER BY e.id""", (iv["id"],))]
+    for e in events:
+        e["question"] = e.pop("position") + 1 if e.get("position") is not None else None
+    levels = ["beginner", "intermediate", "advanced", "expert"]
+    unused = c.execute("SELECT COUNT(*) FROM interview_pool WHERE interview_id=? AND status='available'", (iv["id"],)).fetchone()[0]
+    return {"strategy": config.get("strategy"), "start_level": config.get("start_level"),
+            "final_level": levels[int(state.get("level", 1))] if state else config.get("start_level"),
+            "level_history": state.get("level_history", []), "events": events, "pool_unused": unused, "end_reason": iv["end_reason"]}
+
+
+def resume_coverage(plan: dict[str, Any], questions: list[dict]) -> Optional[dict[str, Any]]:
+    inventory = plan.get("resume_inventory") or []
+    asked = [q for q in questions if q.get("source") == "resume"]
+    if not inventory and not asked:
+        return None
+    discussed = {((q.get("claim") or {}).get("label") or "") for q in asked if q["status"] in ("answered", "skipped")}
+    def hit(label: str) -> bool:
+        return any(d == label or d.startswith(label + ":") or d.startswith(label) for d in discussed if d)
+    unexplored = [ci for ci in inventory if not hit(ci.get("label") or "")]
+    return {"claims_total": len(inventory), "claims_discussed": len(inventory) - len(unexplored), "unexplored": unexplored[:20],
+            "questions": len(asked)}
 
 
 def _load_claim(raw: Optional[str]) -> Optional[dict[str, Any]]:
@@ -295,7 +418,28 @@ def get_report(db: Database, iid: int) -> dict[str, Any]:
     data["insights_source"] = "model" if data["narrative"] else "rules"
     data["report_created_at"] = row["created_at"]
     _mark_deleted_resumes(db, data)
+    data["progress"] = topic_progress(db, iid, data.get("topics") or [])
     return data
+
+
+def topic_progress(db: Database, iid: int, topics: list[dict]) -> list[dict[str, Any]]:
+    """For each scored topic: the average in the most recent EARLIER report that covered it, and the change since."""
+    want = {t["topic"]: t["average_score"] for t in topics if t["average_score"] is not None}
+    if not want:
+        return []
+    with db.read() as c:
+        rows = c.execute("SELECT interview_id, data_json FROM reports WHERE interview_id < ? ORDER BY interview_id DESC LIMIT 50", (iid,)).fetchall()
+    prev: dict[str, tuple[int, float]] = {}
+    for r in rows:
+        try:
+            older = json.loads(r["data_json"]).get("topics") or []
+        except ValueError:
+            continue
+        for t in older:
+            if t.get("topic") in want and t["topic"] not in prev and t.get("average_score") is not None:
+                prev[t["topic"]] = (r["interview_id"], t["average_score"])
+    return [{"topic": k, "average_score": v, "previous": prev[k][1] if k in prev else None, "previous_interview_id": prev[k][0] if k in prev else None,
+             "delta": round(v - prev[k][1], 1) if k in prev else None} for k, v in want.items()]
 
 
 def _mark_deleted_resumes(db: Database, data: dict[str, Any]) -> None:
@@ -311,6 +455,26 @@ def _mark_deleted_resumes(db: Database, data: dict[str, Any]) -> None:
             q["resume_deleted"] = q.get("resume_id") is None or q.get("resume_id") not in alive
     for cl in data.get("resume_claims") or []:
         cl["resume_deleted"] = cl.get("resume_id") is None or cl.get("resume_id") not in alive
+
+
+def redact(data: dict[str, Any]) -> dict[str, Any]:
+    """A shareable copy of a report: scores, feedback and questions stay; the candidate's own words and resume text are removed."""
+    import copy
+    out = copy.deepcopy(data)
+    for q in out.get("questions", []):
+        if q.get("claim"):
+            q["claim"] = {**q["claim"], "excerpt": "[redacted]"}
+        for t in q.get("turns", []):
+            if t.get("answer"):
+                t["answer"] = "[redacted]"
+            ev = t.get("evaluation") or {}
+            if ev.get("interpreted_answer"):
+                ev["interpreted_answer"] = "[redacted]"
+            for e in ev.get("evidence") or []:
+                e["quote"] = "[redacted]"
+    out.pop("ai_usage", None)
+    out["redacted"] = True
+    return out
 
 
 def set_narrative(db: Database, iid: int, narrative: Optional[dict], status: str, error: Optional[str]) -> None:
@@ -368,6 +532,27 @@ def render_markdown(r: dict[str, Any]) -> str:
             "## Repeated misconceptions", "", _bullets(ins["repeated_misconceptions"]), "",
             "## Topics to revise", "", _bullets(ins["topics_to_revise"]), "",
             "## Recommendations", "", _bullets(ins["recommendations"]), ""]
+    intel = r.get("intelligence") or {}
+    if intel.get("classifications") or intel.get("learning_plan"):
+        out += ["## Assessment detail", ""]
+        if intel.get("classifications"):
+            out += ["Answer classification: " + ", ".join(f"{c['key'].replace('_', ' ')} {c['count']}" for c in intel["classifications"]), ""]
+        cvp = intel.get("conceptual_vs_practical") or {}
+        if cvp.get("summary"):
+            out += [f"Conceptual {cvp['conceptual']}/10 vs practical {cvp['practical']}/10. {cvp['summary']}", ""]
+        if intel.get("difficulty"):
+            out += ["| Difficulty | Questions | Average |", "|---|---|---|"] + [f"| {d['difficulty']} | {d['questions']} | {d['average_score']} |" for d in intel["difficulty"]] + [""]
+        if intel.get("learning_plan"):
+            out += ["### Learning plan", ""] + [f"- **{p['skill']}** ({p['average']}/10): {p['action']}" for p in intel["learning_plan"]] + [""]
+    ad = r.get("adaptive")
+    if ad:
+        out += ["## Adaptive interview", "", f"Strategy: {ad['strategy']} · level {ad['start_level']} → {ad['final_level']} · ended: {ad.get('end_reason') or '-'}", ""]
+        out += [f"- {('Q' + str(e['question']) + ': ') if e.get('question') else ''}{e['reason']}" for e in ad["events"]] + [""]
+    cov = r.get("resume_coverage")
+    if cov and cov.get("claims_total"):
+        out += ["## Resume coverage", "", f"{cov['claims_discussed']} of {cov['claims_total']} resume roles/projects discussed.", ""]
+        if cov["unexplored"]:
+            out += ["Not yet explored:", _bullets([f"{u.get('section')}: {u.get('label')}" for u in cov["unexplored"]]), ""]
     out += ["## Scorecard", "", "| # | Question | Answer | Follow-ups | Question score |", "|---|---|---|---|---|"]
     for q in r["questions"]:
         main = next((t for t in q["turns"] if t["kind"] == "main"), None)

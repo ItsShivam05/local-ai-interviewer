@@ -292,14 +292,15 @@ def _reason(kind: str, q: PoolQ, *, level: str, target: str, settings: Settings,
     t = topic_of(q.topic)
     diff = (q.difficulty or "unrated").lower()
     fit = f"{diff} question" + ("" if diff == target else f" (closest available to the {level} level)")
+    art = "an" if fit[0] in "aeiou" else "a"
     return {
-        "start": f"Opening with a {fit} on {t} at the {level} level.",
-        "continue_topic": f"Staying on {t} with a {fit}" + (f" to explore {focus} in depth." if settings.strategy == "deep_dive" else "."),
-        "switch_topic": f"Moving to {t} to cover another area, with a {fit}.",
-        "revisit_weak": f"Returning to {weak_topic}, which went less well earlier, with a {fit}.",
+        "start": f"Opening with {art} {fit} on {t} at the {level} level.",
+        "continue_topic": f"Staying on {t} with {art} {fit}" + (f" to explore {focus} in depth." if settings.strategy == "deep_dive" else "."),
+        "switch_topic": f"Moving to {t} to cover another area, with {art} {fit}.",
+        "revisit_weak": f"Returning to {weak_topic}, which went less well earlier, with {art} {fit}.",
         "explore_claim": f"Exploring a resume claim not yet discussed: {q.claim_label}.",
         "revisit_claim": f"Revisiting a resume claim that was explained weakly: {q.claim_label}.",
-    }.get(kind, f"Next: a {fit} on {t}.")
+    }.get(kind, f"Next: {art} {fit} on {t}.")
 
 
 def planned_total(settings: Settings, pool_size: int, asked: int) -> int:
