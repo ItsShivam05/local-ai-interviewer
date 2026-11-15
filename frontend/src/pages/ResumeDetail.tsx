@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, resumesApi } from "../api";
 import Icon from "../components/Icon";
+import CandidateProfile from "../components/CandidateProfile";
 import ResumeEditor from "../components/ResumeEditor";
 import { CardsSkeleton } from "../components/Loaders";
 import { Confirm, fmtDate, useAsync, useToast } from "../components/ui";
@@ -10,7 +11,7 @@ import type { Resume, ResumeProfile, ResumeText } from "../types";
 import { ConsentDialog, DELETE_NOTE, practice } from "./Resumes";
 import { usePoll } from "./usePoll";
 
-type Tab = "content" | "preview" | "text";
+type Tab = "content" | "profile" | "preview" | "text";
 
 function RawText({ id, method }: { id: number; method: string | null }) {
   const toast = useToast();
@@ -165,7 +166,7 @@ export default function ResumeDetail({ id }: { id: number }) {
       )}
 
       <div className="tabs" role="tablist" aria-label="Resume views">
-        {([["content", "Content"], ["preview", "Preview"], ["text", "Original text"]] as const).map(([k, label]) => (
+        {([["content", "Content"], ["profile", "Candidate profile"], ["preview", "Preview"], ["text", "Original text"]] as const).map(([k, label]) => (
           <button key={k} id={`tab-${k}`} role="tab" aria-selected={tab === k} aria-controls={`panel-${k}`} className={`tab ${tab === k ? "active" : ""}`} onClick={() => setTab(k)}>{label}</button>
         ))}
       </div>
@@ -201,6 +202,10 @@ export default function ResumeDetail({ id }: { id: number }) {
             {!draft && !failedNoProfile && (working || r.status === "uploaded") && <CardsSkeleton n={2} label="Your resume is being organised…" />}
           </>
         )}
+        {tab === "profile" && (dirty
+          ? <div className="notice info" role="status">You have unsaved changes. Save them in the Content tab and this profile will update.{" "}<button className="linkbtn" onClick={() => setTab("content")}>Back to Content</button></div>
+          : r.status !== "ready" ? <div className="notice info" role="status">The candidate profile appears once the resume has been read and organised.</div>
+          : <CandidateProfile id={r.id} version={`${r.revision}-${r.updated_at}`} onEdit={() => setTab("content")} />)}
         {tab === "preview" && <Preview id={r.id} name={r.name} />}
         {tab === "text" && <RawText id={r.id} method={r.extraction_method} />}
       </div>

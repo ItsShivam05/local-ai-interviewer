@@ -1,0 +1,21 @@
+name: Bug report
+description: Something does not work as described
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes: {label: What happened, description: "What did you do, what did you expect, what happened instead?"}
+    validations: {required: true}
+  - type: input
+    id: platform
+    attributes: {label: Platform, placeholder: "macOS 26 / Apple M2 / 8 GB, Windows 11, Ubuntu 24.04 …"}
+    validations: {required: true}
+  - type: input
+    id: mode
+    attributes: {label: AI mode and model, placeholder: "local qwen3.5:4b / cloud gpt-oss:120b …"}
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log lines
+      description: From logs/backend.log. Please remove anything personal — the app never logs answers or resume text, but check anyway.
+      render: text

@@ -102,6 +102,7 @@ export default function SettingsPage() {
         </div>
       )}
       {tab === "profile" && <ResumeData />}
+      {tab === "profile" && <BackupCard />}
 
       {tab === "rubric" && !r && !rubric.error && <CardsSkeleton n={2} label="Loading the evaluation rubric…" />}
       {tab === "rubric" && r && (
@@ -129,6 +130,49 @@ export default function SettingsPage() {
           </div>
         </div>
       )}
+      {tab === "rubric" && <ProfilesView />}
+    </div>
+  );
+}
+
+/** Settings → Profile: a download of every piece of local data as one consistent SQLite file. */
+function BackupCard() {
+  return (
+    <div className="card" style={{ maxWidth: 560 }} data-testid="backup-card">
+      <h2>Backup</h2>
+      <p className="muted" style={{ marginTop: -4 }}>Download a copy of everything stored on this computer: question sets, interviews, answers, reports, resume text and your saved Ollama API key.</p>
+      <div className="notice warn small" role="note" style={{ marginTop: 0 }}><b>Keep this file private.</b> It contains your answers, resume text and API key. It is saved only to this computer, and nothing is uploaded. Do not share it; use the share-safe export on a report instead.</div>
+      <a className="btn primary" href={api.backupUrl()} download><Icon name="download" />Download a backup</a>
+    </div>
+  );
+}
+
+/** Settings → Evaluation rubric: the evaluation profiles (read-only): which skills count how much for each kind of question. */
+function ProfilesView() {
+  const prof = useAsync(() => api.evaluationProfiles(), []);
+  const [key, setKey] = useState("general");
+  const list = prof.data?.profiles ?? [];
+  const cur = list.find((p) => p.key === key) ?? list[0];
+  return (
+    <div className="card" data-testid="eval-profiles" style={{ marginTop: 16 }}>
+      <h2>Evaluation profiles</h2>
+      <p className="muted" style={{ marginTop: -4 }}>Each answer is graded with the profile that fits its topic, so a SQL answer is judged on NULL handling and joins while a design answer is judged on trade-offs. Read-only: this shows how much each skill counts.</p>
+      <ErrorNotice error={prof.error} />
+      {!prof.data && !prof.error && <span className="skel" style={{ height: 80 }} />}
+      {cur && <>
+        <div className="fld"><div className="lbl"><label htmlFor="prof-sel">Profile</label><small>version {cur.version}</small></div>
+          <select id="prof-sel" value={cur.key} onChange={(e) => setKey(e.target.value)} style={{ maxWidth: 320 }}>{list.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}</select></div>
+        {cur.guidance && <p className="small" style={{ marginTop: 0 }}><b>Guidance for the grader:</b> {cur.guidance}</p>}
+        <div className="wgrid">
+          {[...cur.dimensions].sort((a, b) => b.weight - a.weight).map((d) => (
+            <div className="wrow" key={d.key}>
+              <div className="n"><b>{d.label}</b><span>{d.meaning}</span></div>
+              <div className="ri-meter" style={{ margin: 0 }} role="img" aria-label={`${d.label} ${Math.round(d.weight * 100)} percent`}><i style={{ width: `${Math.round(d.weight * 100)}%` }} /></div>
+              <div className="v">{Math.round(d.weight * 100)}%</div>
+            </div>
+          ))}
+        </div>
+      </>}
     </div>
   );
 }

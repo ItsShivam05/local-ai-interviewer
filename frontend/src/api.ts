@@ -1,5 +1,5 @@
 import type { PullStatus, SetupReport, Health, HistoryRow, ImportPreview, ImportResult, InterviewConfig, InterviewState, QSet, Question, QuestionInput, Report, Rubric, Stats, Usage, AIState, AITest, AIUpdate,
-  DraftQuestion, GenJob, GenSettings, Resume, ResumeProfile, ResumeQuestionInput, ResumeStorage, ResumeSummary, ResumeText } from "./types";
+  CandidateIntel, DraftQuestion, EvalProfiles, ResumeAuto, GenJob, GenSettings, Resume, ResumeProfile, ResumeQuestionInput, ResumeStorage, ResumeSummary, ResumeText } from "./types";
 
 export class ApiError extends Error {
   constructor(public code: string, message: string, public status = 0) {
@@ -110,8 +110,8 @@ export const api = {
   exportSetUrl: (setId: number) => `/api/sets/${setId}/export`,
 
   interviews: () => cachedGet<HistoryRow[]>("/api/interviews", 3000),
-  createInterview: (setId: number | null, config: Partial<InterviewConfig>, resumeQuestions: ResumeQuestionInput[] = []) =>
-    call<InterviewState>("/api/interviews", json("POST", { set_id: setId, config, resume_questions: resumeQuestions })),
+  createInterview: (setId: number | null, config: Partial<InterviewConfig>, resumeQuestions: ResumeQuestionInput[] = [], resumeAuto?: ResumeAuto | null) =>
+    call<InterviewState>("/api/interviews", json("POST", { set_id: setId, config, resume_questions: resumeQuestions, ...(resumeAuto ? { resume_auto: resumeAuto } : {}) })),
   interview: (id: number) => call<InterviewState>(`/api/interviews/${id}`, undefined, { quiet: true }),
   answer: (id: number, turnId: number, text: string, source: "typed" | "voice") =>
     call<InterviewState>(`/api/interviews/${id}/answer`, json("POST", { turn_id: turnId, text, source })),
@@ -122,10 +122,12 @@ export const api = {
   clearHistory: () => call<{ deleted: number }>("/api/interviews?confirm=true", json("DELETE")),
   report: (id: number) => call<Report>(`/api/interviews/${id}/report`),
   regenerateReport: (id: number) => call<Report>(`/api/interviews/${id}/report/regenerate`, json("POST")),
-  exportReportUrl: (id: number, format: "md" | "json") => `/api/interviews/${id}/report/export?format=${format}`,
+  exportReportUrl: (id: number, format: "md" | "json", redact = false) => `/api/interviews/${id}/report/export?format=${format}${redact ? "&redact=true" : ""}`,
+  evaluationProfiles: () => cachedGet<EvalProfiles>("/api/evaluation/profiles", 60_000),
+  backupUrl: () => "/api/backup",
   /** Builds the PDF report on the server and saves it as a file (no print dialog). Resolves with the file name. */
-  downloadReportPdf: async (id: number): Promise<string> => {
-    const res = await call<Response>(`/api/interviews/${id}/report/export?format=pdf`);
+  downloadReportPdf: async (id: number, redact = false): Promise<string> => {
+    const res = await call<Response>(`/api/interviews/${id}/report/export?format=pdf${redact ? "&redact=true" : ""}`);
     const blob = await res.blob();
     const name = /filename="?([^";]+)"?/i.exec(res.headers.get("content-disposition") ?? "")?.[1] ?? `interview-report-${id}.pdf`;
     const url = URL.createObjectURL(blob);
@@ -169,6 +171,7 @@ export const resumesApi = {
   list: (quiet = false) => call<ResumeSummary[]>("/api/resumes", undefined, { quiet }),
   cachedList: () => cachedGet<ResumeSummary[]>("/api/resumes", 3000, false, { quiet: true }),
   get: (id: number, quiet = false) => call<Resume>(`/api/resumes/${id}`, undefined, { quiet }),
+  intelligence: (id: number) => call<CandidateIntel>(`/api/resumes/${id}/intelligence`),
   text: (id: number) => call<ResumeText>(`/api/resumes/${id}/text`),
   storage: () => call<ResumeStorage>("/api/resumes/storage"),
   patch: (id: number, revision: number, patch: { name?: string; profile?: ResumeProfile }) => call<Resume>(`/api/resumes/${id}`, json("PATCH", { revision, ...patch })),

@@ -13,17 +13,36 @@ export interface InterviewConfig {
   strictness: "lenient" | "balanced" | "strict"; feedback_mode: "immediate" | "after_followups" | "at_end";
   question_audio: "auto" | "manual"; mic_enabled: boolean;
   include_bank?: boolean; mix?: MixOrder;
+  mode?: InterviewMode; strategy?: Strategy; start_level?: Level; max_questions?: number; time_limit_minutes?: number | null; focus_topic?: string | null;
 }
+export type InterviewMode = "fixed" | "adaptive";
+export type Strategy = "progressive" | "deep_dive" | "practical" | "conceptual" | "mixed" | "resume";
+export type Level = "beginner" | "intermediate" | "advanced" | "expert";
+export type Classification = "correct" | "correct_incomplete" | "partially_correct" | "incorrect" | "no_attempt" | "uncertain";
+export type FollowupKind = "probe_gap" | "clarify" | "deepen" | "scenario";
+export interface EvidenceItem { kind: "correct" | "incorrect" | "unclear"; point: string; quote: string; verified: boolean }
+export interface Provenance { prompt_version?: string; profiles_version?: number; rubric?: string; level?: string; temperature?: number; input_hash?: string; graded_by?: Evaluation["graded_by"] }
+export interface ResumeAuto { resume_id: number; count: number }
+export interface LevelChange { from: Level; to: Level; after_question: number; reason: string }
+export interface AdaptiveEvent { kind: string; decision: string; reason: string; question?: number | null; topic: string | null; level_before: Level | null; level_after: Level | null; item_id?: number | null; turn_id?: number | null; created_at?: string }
+export interface AdaptiveState {
+  strategy: Strategy; level: Level; start_level: Level; target_difficulty: Difficulty | null; focus_topic: string | null; planned_total: number; pool_remaining: number;
+  current_reason: string | null; current_decision: string | null; level_history: LevelChange[]; events: AdaptiveEvent[];
+}
+export interface TimeInfo { limit_s: number | null; elapsed_s: number | null; remaining_s: number | null }
 export type MixOrder = "bank_first" | "resume_first" | "interleave" | "shuffled";
 
 export interface Evaluation {
   correct_points: string[]; missing_concepts: string[]; misconceptions: string[];
-  dimension_scores: Record<string, number>; production_relevant: boolean; suggested_improvements: string[];
+  dimension_scores: Record<string, number | null>; production_relevant: boolean; suggested_improvements: string[];
   verdict_summary?: string; ideal_answer: string; confidence: "high" | "medium" | "low"; uncertainty_note: string;
   needs_followup: boolean; followup_reason: string; score: number; verdict: string;
   followup_asked: boolean; followup_suppressed_reason?: string | null;
   question_level?: "basic" | "standard" | "advanced"; interpreted_answer?: string | null;
   graded_by?: { provider: "local" | "cloud"; model: string; fell_back_from?: string | null; reason?: string | null } | null;
+  profile?: string; profile_label?: string; weights?: Record<string, number>; classification?: Classification; evidence?: EvidenceItem[];
+  unverified_misconceptions?: string[]; consistency_flags?: { code: string; message: string }[]; adjustments?: string[];
+  followup_kind?: FollowupKind | null; provenance?: Provenance | null; deeper_question?: string;
 }
 export interface Turn {
   id: number; seq: number; kind: "main" | "followup"; question_text: string; status: "asked" | "submitted" | "evaluated" | "skipped";
@@ -35,7 +54,8 @@ export interface InterviewState {
   id: number; title: string; interview_type: string; status: "in_progress" | "paused" | "completed" | "ended";
   phase: "awaiting_answer" | "evaluating" | "evaluation_failed" | "feedback" | "done"; error: string | null;
   config: InterviewConfig; current_turn_id: number | null; created_at: string; completed_at: string | null;
-  progress: { total: number; finished: number; answered: number; skipped: number; unanswered: number; position: number | null };
+  progress: { total: number; finished: number; answered: number; skipped: number; unanswered: number; position: number | null; planned?: boolean };
+  mode?: InterviewMode; end_reason?: string | null; time?: TimeInfo | null; adaptive?: AdaptiveState | null;
   items: ItemView[];
   current: null | {
     item: { id: number; position: number; text: string; topic: string | null; difficulty: string | null; followup_count: number; followups_max: number; followups_remaining: number; source?: "bank" | "resume"; resume_name?: string | null };
@@ -51,13 +71,45 @@ export interface ReportQuestion { position: number; text: string; topic: string 
 export interface ResumeClaimResult { resume_id: number | null; resume_name: string; section: string; label: string; average_score: number; verdict: "Solid" | "Shaky" | "Weak"; questions: number; scored: number; question_numbers: number[]; tip: string; resume_deleted?: boolean }
 export interface Insights { overall_summary: string; strengths: string[]; knowledge_gaps: string[]; repeated_misconceptions: string[]; topics_to_revise: string[]; recommendations: string[] }
 export interface Report {
-  interview: { id: number; title: string; type: string; status: string; created_at: string; completed_at: string | null; config: InterviewConfig };
+  interview: { id: number; title: string; type: string; status: string; created_at: string; completed_at: string | null; config: InterviewConfig; end_reason?: string | null };
   summary: { total_questions: number; answered: number; skipped: number; unanswered: number; scored: number; answered_not_scored: number; average_score: number | null; followups_asked: number; verdict: string | null };
   topics: { topic: string; questions: number; scored: number; average_score: number | null }[];
   ai_usage?: { calls: number; prompt_tokens: number; output_tokens: number; seconds: number; cost_usd: number | null; by_provider: Record<string, { calls: number; cost_usd: number | null; unpriced_calls: number }> };
   questions: ReportQuestion[]; scoring_rules: string[]; skills?: { key: string; label: string; average: number | null; answers: number }[]; insights: Insights; insights_source: "model" | "rules";
   narrative_status: "pending" | "ready" | "failed"; narrative_error: string | null;
   resume_claims?: ResumeClaimResult[];
+  intelligence?: ReportIntelligence; adaptive?: ReportAdaptive | null; resume_coverage?: ResumeCoverage | null; progress?: TopicProgress[];
+}
+export interface ReportIntelligence {
+  classifications: { key: Classification; count: number }[];
+  difficulty: { difficulty: string; questions: number; average_score: number | null }[];
+  conceptual_vs_practical: { conceptual: number | null; practical: number | null; summary: string };
+  profiles: { key: string; label: string; answers: number; average_score: number | null }[];
+  evidence: { quotes: number; verified: number; unverified_misconceptions: number };
+  consistency: { flags: { code?: string; message: string }[]; adjustments: string[] };
+  learning_plan: { skill: string; average: number | null; action: string }[];
+}
+export interface ReportAdaptive { strategy: Strategy; start_level: Level; final_level: Level; level_history: LevelChange[]; events: AdaptiveEvent[]; pool_unused: number; end_reason: string | null }
+export interface ResumeCoverage { claims_total: number; claims_discussed: number; unexplored: { section: string; label: string; resume_id?: number }[]; questions: number }
+export interface TopicProgress { topic: string; average_score: number | null; previous: number | null; previous_interview_id?: number | null; delta: number | null }
+export interface EvalProfile { key: string; label: string; version: number; guidance: string; dimensions: { key: string; label: string; meaning: string; weight: number }[] }
+export interface EvalProfiles { version: number; profiles: EvalProfile[] }
+
+// ------------------------------------------------------------------ candidate profile (resume intelligence)
+export interface SourceRef { section?: string; label?: string; line?: number | null; status: "verified" | "partial" | "not_found" | "unknown" }
+export interface CandidateSkill { name: string; category: string; listed: boolean; used_in: string[]; sources: SourceRef[]; aliases: string[]; confidence: "high" | "medium" | "low"; confidence_reason: string }
+export interface CandidateIntel {
+  resume_id: number; resume_name: string; skills: CandidateSkill[];
+  projects: { name: string; tech: string[]; bullets: number; has_metrics: boolean; source?: { status: SourceRef["status"]; line?: number | null }; clarifications?: number }[];
+  experience: { roles: number; companies?: string[]; years: number | null; gaps: { from: string; to: string; months: number }[]; current: string[] };
+  relationships: { a: string; b: string; contexts: string[]; strength: number }[];
+  claims: { kind: string; section: string; label: string; text: string; source?: { status: SourceRef["status"]; line?: number | null } }[];
+  clarifications: { kind: string; section: string; label: string; text: string; why: string; suggested_question: string }[];
+  extraction: { checked: number; verified: number; partial: number; not_found: number; unknown?: number; score: number | null; confidence: string; not_found_examples: string[] };
+  injection_warnings: { line: number; text: string }[];
+  suggested_questions: DraftQuestion[];
+  practice_history: { label: string; section: string; attempts: { interview_id: number; title: string; date: string | null; average_score: number | null; verdict: string | null; tip?: string | null }[] }[];
+  unexplored: { section: string; label: string }[]; notes: string[];
 }
 export interface Health {
   ollama: { ok: boolean; host: string; version: string | null; error: string | null };

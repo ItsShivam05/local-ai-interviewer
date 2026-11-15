@@ -40,4 +40,27 @@ describe("Feedback", () => {
     render(<Feedback ev={{ ...base, question_level: "basic" }} score={4.9} />);
     expect(screen.getByText(/depth and real-world examples count less/)).toBeInTheDocument();
   });
+  it("shows the classification, profile, evidence and how it was graded", () => {
+    const ev: Evaluation = { ...base, classification: "correct_incomplete", profile_label: "SQL",
+      dimension_scores: { ...base.dimension_scores, tradeoffs: 7, edge_cases: null },
+      evidence: [{ kind: "correct", point: "joins", quote: "joins combine rows", verified: true }, { kind: "incorrect", point: "nulls", quote: "nulls equal", verified: false }],
+      unverified_misconceptions: ["Confuses UNION with JOIN"], adjustments: ["Capped at 6 because a key point was missing."], consistency_flags: [{ code: "x", message: "Score and verdict were aligned." }],
+      weights: { correctness: 0.3, edge_cases: 0.1 }, provenance: { prompt_version: "eval-2.0", rubric: "sql-v2", graded_by: { provider: "local", model: "qwen3.5:4b" } } };
+    render(<Feedback ev={ev} score={6} />);
+    expect(screen.getByTestId("fb-class")).toHaveTextContent("Correct but incomplete");
+    expect(screen.getByText("Graded as: SQL")).toBeInTheDocument();
+    expect(screen.getByText(/Trade-off analysis: 7\/10/)).toBeInTheDocument();
+    expect(screen.queryByText(/Edge-case awareness: /)).toBeNull();
+    expect(screen.getByText("Verified in your answer")).toBeInTheDocument();
+    expect(screen.getByText("Not verified")).toBeInTheDocument();
+    expect(screen.getByTestId("fb-unverified")).toHaveTextContent("Possible errors (not found in your answer, not counted)");
+    expect(screen.getByTestId("fb-unverified")).toHaveTextContent("Confuses UNION with JOIN");
+    const how = screen.getByTestId("how-graded");
+    expect(how).toHaveTextContent("Capped at 6"); expect(how).toHaveTextContent("Score and verdict were aligned.");
+    expect(how).toHaveTextContent("Correctness 30%"); expect(how).toHaveTextContent("eval-2.0"); expect(how).toHaveTextContent("sql-v2"); expect(how).toHaveTextContent("qwen3.5:4b");
+  });
+  it("adds nothing for evaluations without the new fields", () => {
+    render(<Feedback ev={base} score={4.9} />);
+    for (const id of ["fb-class", "fb-unverified", "fb-evidence", "how-graded", "fb-tags"]) expect(screen.queryByTestId(id)).toBeNull();
+  });
 });

@@ -114,3 +114,14 @@ def test_intelligence_requires_a_ready_resume_and_makes_no_model_call(client, co
         c.execute("UPDATE resumes SET status='ready' WHERE id=?", (rid,))
     assert client.get(f"/api/resumes/{rid}/intelligence").status_code == 200
     assert fake.chat_calls == [] and client.get("/api/resumes/999/intelligence").status_code == 404
+
+
+def test_offline_resume_questions_respect_cloud_consent(client, container, set_id):
+    rid = ready_resume(container)
+    container.resumes.is_cloud = lambda: True                 # cloud mode on, this resume never consented
+    body = {"set_id": None, "config": {"include_bank": False, "max_followups": 0}, "resume_auto": {"resume_id": rid, "count": 3}}
+    r = client.post("/api/interviews", json=body)
+    assert r.status_code == 409 and r.json()["error"]["code"] == "cloud_consent_required"
+    with container.db.tx() as c:
+        c.execute("UPDATE resumes SET consent_cloud=1 WHERE id=?", (rid,))
+    assert client.post("/api/interviews", json=body).status_code == 201

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, resumesApi } from "../api";
 import { speaker } from "../audio";
-import Icon, { Stop } from "../components/Icon";
+import Icon, { Stop, type IconName } from "../components/Icon";
 import ActiveInterviews, { isActive } from "../components/ActiveInterviews";
 import { ErrorNotice, OptionCards, Section, Seg, Switch, topicClass, useAsync, useToast } from "../components/ui";
 import type { DraftQuestion, GenSettings, InterviewConfig, MixOrder, Question } from "../types";
@@ -11,6 +11,7 @@ import { DEFAULT_FOCUS, MIX_LABEL, interviewMinutes, mixSequence, sessionCounts,
 import type { SystemVoice } from "../systemVoices";
 import { estimateInterviewCost, fmtUsd } from "../aiHelpers";
 import { describeTopics } from "../practice";
+import { LEVELS, LEVEL_LABEL, STRATEGIES, levelLabel, minutesLabel, resumeStrategyAvailable, strategyLabel } from "../intel";
 import { openSettings } from "../settingsTab";
 import { shortVoiceName, useSpeaker, useSystemVoices } from "./useSpeaker";
 
@@ -18,14 +19,18 @@ const KEY = "lai.setup";
 const DEFAULTS: InterviewConfig = {
   title: "Practice Interview - 1", interview_type: "technical", question_ids: null, order: "supplied", max_followups: 2,
   voice: "default", speech_speed: 1, strictness: "balanced", feedback_mode: "at_end", question_audio: "auto", mic_enabled: false,
+  mode: "fixed", strategy: "progressive", start_level: "intermediate", max_questions: 10, time_limit_minutes: null, focus_topic: null,
 };
-const load = (): InterviewConfig => { try { const { title: _t, feedback_mode: _f, include_bank: _b, mix: _m, ...saved } = JSON.parse(localStorage.getItem(KEY) || "{}"); return { ...DEFAULTS, ...saved, question_ids: null }; } catch { return DEFAULTS; } };
+const STRATEGY_ICON: Record<string, IconName> = { progressive: "trend", deep_dive: "target", practical: "briefcase", conceptual: "layers", mixed: "shuffle", resume: "file" };
+const load = (): InterviewConfig => { try { const { title: _t, feedback_mode: _f, include_bank: _b, mix: _m, ...saved } = JSON.parse(localStorage.getItem(KEY) || "{}"); return { ...DEFAULTS, ...saved, question_ids: null, focus_topic: null }; } catch { return DEFAULTS; } };
 // the resume part of the setup (settings + reviewed questions) survives a page refresh within this tab
 const DRAFT_KEY = "lai.setup.resume";
-interface ResumeDraft { source: Source; gen: GenSettings; questions: DraftQuestion[]; mix: MixOrder; saveToBank: boolean }
+interface ResumeDraft { auto: { on: boolean; count: number; id: number | null }; source: Source; gen: GenSettings; questions: DraftQuestion[]; mix: MixOrder; saveToBank: boolean }
 const loadDraft = (): Partial<ResumeDraft> => { try { return JSON.parse(sessionStorage.getItem(DRAFT_KEY) || "{}"); } catch { return {}; } };
 const SOURCE_LABEL: Record<Source, string> = { bank: "Question bank", resume: "Resume", both: "Both" };   // the title is never remembered: each interview gets its own
 const takePreselect = (): { setId: number; ids: number[]; label?: string; skipped?: { topic: string; untagged: boolean }[] } | null => { try { const v = localStorage.getItem("lai.preselect"); localStorage.removeItem("lai.preselect"); return v ? JSON.parse(v) : null; } catch { return null; } };
+/** Topics of the bank questions that will be used (none when the bank is not used). */
+const useBankTopics = (source: Source, mode: "all" | "selected", all: Question[], chosen: Question[]) => (source === "resume" ? [] : (mode === "all" ? all : chosen).map((q) => q.topic ?? ""));
 const TYPES = { technical: "Technical", hr: "HR", scenario: "Scenario-based", mixed: "Mixed" } as const;
 const STRICT_DESC = { lenient: "Credits partial understanding", balanced: "Fair, like a real interviewer", strict: "Expects precision and depth" } as const;
 
@@ -58,12 +63,14 @@ export default function Setup() {
   const [rqs, setRqs] = useState<DraftQuestion[]>(resumeIntent ? [] : draft0.questions ?? []);
   const [mix, setMix] = useState<MixOrder>(draft0.mix ?? "interleave");
   const [saveToBank, setSaveToBank] = useState(!!draft0.saveToBank);
-  useEffect(() => { try { sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ source, gen, questions: rqs, mix, saveToBank })); } catch { /* ignore */ } }, [source, gen, rqs, mix, saveToBank]);
+  const [auto, setAuto] = useState<{ on: boolean; count: number; id: number | null }>({ on: false, count: 5, id: null, ...draft0.auto });
+  useEffect(() => { try { sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ source, gen, questions: rqs, mix, saveToBank, auto })); } catch { /* ignore */ } }, [source, gen, rqs, mix, saveToBank, auto]);
   useEffect(() => {      // drop resumes that are gone or not ready; with one ready resume and nothing chosen, choose it
     if (!resumes.data) return;
     const ok = gen.resume_ids.filter((id) => ready.some((r) => r.id === id));
     if (ok.length !== gen.resume_ids.length || (!ok.length && ready.length === 1)) setGen((g) => ({ ...g, resume_ids: ok.length ? ok : ready.length === 1 ? [ready[0].id] : [] }));
     if (!ready.length && source !== "bank") setSource("bank");
+    setAuto((a) => (a.on && !ready.length ? { ...a, on: false } : a.id != null && !ready.some((r) => r.id === a.id) ? { ...a, id: null } : a));
   }, [resumes.data]); // eslint-disable-line react-hooks/exhaustive-deps
   const [setId, setSetId] = useState<number | null>(pre?.setId ?? null);
   const [cfg, setCfg] = useState<InterviewConfig>(load);
@@ -104,12 +111,21 @@ export default function Setup() {
   const bankCount = mode === "all" ? questions.length : chosen.length;
   const goodRqs = rqs.filter(validQuestion);
   const counts = sessionCounts(source, bankCount, goodRqs.length);
-  const count = counts.total;
+  const adaptive = cfg.mode === "adaptive";
+  const autoId = auto.id ?? ready[0]?.id ?? null;
+  const autoOn = auto.on && autoId != null;
+  const autoCount = autoOn ? auto.count : 0;
+  const poolCount = counts.total + autoCount;                                     // every question the session can draw on
+  const count = adaptive ? Math.min(poolCount, cfg.max_questions ?? 10) : poolCount;      // how many will actually be asked
+  const resumeOk = resumeStrategyAvailable(goodRqs.length * (source === "bank" ? 0 : 1), autoOn, autoCount);
+  const strategyBlocked = adaptive && cfg.strategy === "resume" && !resumeOk;
+  const topicList = [...new Set([...useBankTopics(source, mode, questions, chosen), ...(source === "bank" ? [] : goodRqs.map((q) => q.topic ?? ""))].filter(Boolean))].sort();
   const cloud = health.data?.ai.mode === "cloud";
   const llmReady = cloud ? !!health.data?.ai.ready : !!health.data?.ollama.ok && !!health.data.llm.installed;
   const budgetToday = health.data?.ai.budget?.today;
   const estCost = cloud && ai.data ? estimateInterviewCost(ai.data.config, count, cfg.max_followups) : undefined;
   const estMin = interviewMinutes(count, cfg.max_followups);
+  const estShown = cfg.time_limit_minutes ? Math.min(estMin, cfg.time_limit_minutes) : estMin;
   const voiceList = (voices.data ? voiceItems : [{ id: cfg.voice, label: cfg.voice, full: cfg.voice }]).filter((v) => v.full.toLowerCase().includes(vsearch.trim().toLowerCase()));
   const voiceLabel = voiceItems.find((v) => v.id === cfg.voice)?.label ?? cfg.voice;
   const shownQs = questions.filter((q) => `${q.text} ${q.topic ?? ""}`.toLowerCase().includes(qsearch.trim().toLowerCase()));
@@ -121,7 +137,7 @@ export default function Setup() {
   };
 
   const useBank = source !== "resume";
-  const canStart = !busy && count > 0 && active.length === 0 && (!useBank || !!setId) && (source === "bank" || goodRqs.length > 0);
+  const canStart = !busy && count > 0 && active.length === 0 && (!useBank || !!setId) && (source === "bank" || goodRqs.length > 0 || autoOn) && !strategyBlocked;
   const start = async () => {
     if (!canStart) return;
     setBusy(true);
@@ -132,8 +148,11 @@ export default function Setup() {
         try { const r = await resumesApi.saveToBank(resumeQs); if (r.added) toast("ok", `Saved ${r.added} question${r.added === 1 ? "" : "s"} to “${r.sets[0]?.name}”`); }
         catch (e) { toast("error", `Could not save to the question bank: ${(e as Error).message}`); }
       }
-      const st = await api.createInterview(useBank ? setId : null, { ...cfg, question_ids: mode === "all" ? null : chosen.map((q) => q.id), include_bank: useBank,
-        mix: source === "both" ? mix : "bank_first" }, resumeQs);
+      const { strategy, start_level, max_questions, focus_topic, ...rest } = cfg;       // a fixed interview sends none of the adaptive settings
+      const modeCfg = { mode: cfg.mode ?? "fixed", time_limit_minutes: cfg.time_limit_minutes ?? null,
+        ...(adaptive ? { strategy, start_level, max_questions, focus_topic: strategy === "deep_dive" ? focus_topic || null : null } : {}) };
+      const st = await api.createInterview(useBank ? setId : null, { ...rest, ...modeCfg, question_ids: mode === "all" ? null : chosen.map((q) => q.id), include_bank: useBank,
+        mix: source === "both" || (autoOn && useBank) ? mix : "bank_first" }, resumeQs, autoOn ? { resume_id: autoId!, count: auto.count } : null);
       try { sessionStorage.removeItem(DRAFT_KEY); } catch { /* ignore */ }
       window.location.hash = `#/interview/${st.id}`;
     } catch (e) { toast("error", (e as Error).message); setBusy(false); hist.reload(); }
@@ -141,9 +160,13 @@ export default function Setup() {
 
   const summary: [string, string, string][] = [
     ["briefcase", "Type", TYPES[cfg.interview_type]],
-    ["list", "Questions", source === "bank" ? `${count} · ${cfg.order === "shuffled" ? "Shuffled" : "In order"}` : `${count} in total`],
-    ...(source !== "bank" ? [["doc", "From question bank", source === "both" ? String(counts.bank) : "—"] as [string, string, string], ["file", "From resume", String(counts.resume)] as [string, string, string]] : []),
-    ...(source === "both" ? [["shuffle", "Order", MIX_LABEL[mix]] as [string, string, string]] : []),
+    ["route", "Mode", adaptive ? `Adaptive · ${strategyLabel(cfg.strategy)}` : "Fixed order"],
+    ...(adaptive ? [["trend", "Starting level", levelLabel(cfg.start_level)] as [string, string, string]] : []),
+    ...(adaptive && cfg.strategy === "deep_dive" ? [["target", "Focus", cfg.focus_topic || "Largest topic"] as [string, string, string]] : []),
+    ["list", "Questions", adaptive ? `Up to ${count}${poolCount > count ? ` of ${poolCount}` : ""}` : source === "bank" && !autoOn ? `${count} · ${cfg.order === "shuffled" ? "Shuffled" : "In order"}` : `${count} in total`],
+    ...(source !== "bank" || autoOn ? [["doc", "From question bank", source === "resume" ? "—" : String(counts.bank)] as [string, string, string], ["file", "From resume", String(counts.resume + autoCount)] as [string, string, string]] : []),
+    ["clock", "Time limit", minutesLabel(cfg.time_limit_minutes)],
+    ...(!adaptive && (source === "both" || (autoOn && useBank)) ? [["shuffle", "Order", MIX_LABEL[mix]] as [string, string, string]] : []),
     ["msg", "Follow-ups", cfg.max_followups === 0 ? "None" : `Up to ${cfg.max_followups} each`],
     ["voice", "Voice", `${voiceLabel} · ${cfg.speech_speed}×`],
     ["target", "Strictness", cfg.strictness.charAt(0).toUpperCase() + cfg.strictness.slice(1)],
@@ -164,7 +187,7 @@ export default function Setup() {
       <ErrorNotice error={sets.error || qs.error} />
       {pre && showPre && (
         <div className="notice info row between" role="status">
-          <span><b>Practicing {pre.label ?? "your selection"}</b> — {pre.ids.length} question{pre.ids.length === 1 ? "" : "s"} preselected in step 2 below.
+          <span><b>Practicing {pre.label ?? "your selection"}</b> — {pre.ids.length} question{pre.ids.length === 1 ? "" : "s"} preselected in step 3 below.
             {pre.skipped && pre.skipped.length > 0 && <span className="muted"> Left out because you have no questions for {describeTopics(pre.skipped)} yet.</span>}</span>
           <button className="btn" onClick={() => { setMode("all"); setSelected(new Set(questions.map((q) => q.id))); setShowPre(false); }}>Use all questions instead</button>
         </div>
@@ -185,50 +208,64 @@ export default function Setup() {
               ]} /></div>
           </Section>
 
-          <Section step={3} icon="voice" title="Interviewer" desc="Choose the voice and how much the interviewer probes">
-            <div className="fld"><div className="lbl">Voice<small>{!voices.data ? "" : isSystem ? `${sysVoices === null ? "…" : sysVoices.length} offline voices on this computer · press ▶ to hear one` : `Phonon · ${voices.data.voices.length} voices · press ▶ to hear one`}</small></div>
-              <div className="vsearch"><Icon name="search" /><input type="search" aria-label="Search voices" placeholder="Search voices…" value={vsearch} onChange={(e) => setVsearch(e.target.value)} /></div>
-              <div className="vgrid" role="radiogroup" aria-label="Voice" ref={vgrid}>
-                {!voices.data && !voices.error && [0, 1, 2, 3, 4, 5].map((i) => <span key={`sk${i}`} className="skel" style={{ height: 44 }} aria-hidden />)}
-                {voiceList.map((v) => {
-                  const playing = speech.key === `vp-${v.id}` && speech.status !== "idle";
-                  return (
-                    <div key={v.id} role="radio" aria-checked={cfg.voice === v.id} tabIndex={0} className={`vchip ${cfg.voice === v.id ? "on" : ""}`} onClick={() => set("voice", v.id)}
-                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); set("voice", v.id); } }}>
-                      <span className="vn" title={v.full}>{v.label}</span>
-                      <button className="vplay" aria-label={`Preview voice ${v.label}`} title={playing ? "Stop" : "Preview"} onClick={(e) => { e.stopPropagation(); previewVoice(v.id); }}>
-                        {speech.key === `vp-${v.id}` && speech.status === "loading" ? <span className="spinner" style={{ width: 12, height: 12, borderWidth: 2 }} /> : playing ? <Stop /> : <Icon name="vol" size={15} />}</button>
-                    </div>
-                  );
-                })}
-                {voiceList.length === 0 && <div className="muted small">No voice matches “{vsearch}”.</div>}
-              </div>
-              {isSystem && sysVoices !== null && sysVoices.length === 0 && <div className="notice info small" style={{ marginTop: 8 }}>No offline voice was found, so questions will be shown as text only. Windows: Settings → Time &amp; language → Speech → Add voices. Linux: install <b>speech-dispatcher</b> and <b>espeak-ng</b>. Chrome’s online “Google” voices are never used.</div>}
-              {voices.error && <div className="hint" style={{ color: "var(--bad)" }}>{voices.error}</div>}
-              {speech.key?.startsWith("vp-") && speech.error && <div className="hint" style={{ color: "var(--bad)" }}>{speech.error}</div>}
-            </div>
-            <div className="grid2" style={{ alignItems: "start" }}>
-              <div className="fld"><div className="lbl">Playback speed<small>{cfg.speech_speed}×</small></div>
-                <Seg label="Playback speed" size="sm" value={cfg.speech_speed} onChange={(v) => { set("speech_speed", v); speaker.setRate(v); }}
-                  options={[0.75, 1, 1.25, 1.5].map((v) => ({ value: v, label: `${v}×`, aria: `Speed ${v}x` }))} />
-                <div className="hint">{isSystem ? "Applied by your computer’s voice." : "Phonon only speaks at 1×; the browser’s player adjusts speed."}</div></div>
-              <div className="fld"><div className="lbl">Max follow-ups per question<small>{cfg.max_followups === 0 ? "off" : `up to ${cfg.max_followups}`}</small></div>
-                <Seg label="Max follow-ups" size="sm" value={cfg.max_followups} onChange={(v) => set("max_followups", v)}
-                  options={[0, 1, 2, 3].map((v) => ({ value: v, label: v === 0 ? "None" : String(v), aria: `Max follow-ups: ${v}` }))} />
-                <div className="hint">A hard limit; follow-ups are only asked when they add value.</div></div>
-            </div>
-          </Section>
           </div>
           <div className="setup-col">
-          <Section step={2} icon="list" title="Questions" desc="Pick what you’ll be asked and in which order">
+          <Section step={2} icon="route" title="Interview mode" desc="A fixed list in order, or an interviewer that adapts to your answers">
+            <div className="fld"><div className="lbl">Mode</div>
+              <OptionCards label="Interview mode" cols={2} value={cfg.mode ?? "fixed"} onChange={(v) => set("mode", v)} options={[
+                { value: "fixed", title: "Fixed order", desc: "Every chosen question, in the order you set. Nothing changes along the way.", icon: "list" },
+                { value: "adaptive", title: "Adaptive", desc: "Picks each next question from your answers: harder when you do well, easier when you struggle.", icon: "trend" },
+              ]} /></div>
+            {adaptive && <>
+              <div className="fld"><div className="lbl">Strategy<small>how the next question is chosen</small></div>
+                <div className="ocards" data-cols="3" role="radiogroup" aria-label="Adaptive strategy" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))" }}>
+                  {STRATEGIES.map((o) => {
+                    const off = o.value === "resume" && !resumeOk;
+                    return (
+                      <button key={o.value} type="button" role="radio" aria-checked={cfg.strategy === o.value} disabled={off} className={`ocard ${cfg.strategy === o.value ? "on" : ""}`}
+                        onClick={() => set("strategy", o.value)} title={off ? "Add resume questions first (step 3)" : undefined}>
+                        <span className="oc-ic"><Icon name={STRATEGY_ICON[o.value]} /></span><span className="oc-t">{o.title}</span>
+                        <span className="oc-d">{off ? "Needs resume questions: add some in step 3." : o.desc}</span>
+                        <span className="oc-check" aria-hidden><Icon name="check" /></span>
+                      </button>
+                    );
+                  })}
+                </div></div>
+              <div className="grid2" style={{ alignItems: "start" }}>
+                <div className="fld"><div className="lbl">Starting level<small>{levelLabel(cfg.start_level)}</small></div>
+                  <Seg label="Starting level" size="sm" value={cfg.start_level ?? "intermediate"} onChange={(v) => set("start_level", v)}
+                    options={LEVELS.map((v) => ({ value: v, label: LEVEL_LABEL[v] }))} />
+                  <div className="hint">The first question matches this level; it then moves up or down.</div></div>
+                <div className="fld"><div className="lbl"><label htmlFor="maxq">Maximum questions</label><small>{poolCount ? `${poolCount} available` : "none chosen yet"}</small></div>
+                  <input id="maxq" type="number" inputMode="numeric" min={1} max={60} value={cfg.max_questions ?? 10} style={{ width: 110 }}
+                    onChange={(e) => set("max_questions", Math.max(1, Math.min(60, Math.round(Number(e.target.value)) || 1)))} />
+                  <div className="hint">1 to 60. It can end sooner if the questions or the time run out.</div></div>
+              </div>
+              {cfg.strategy === "deep_dive" && (
+                <div className="fld"><div className="lbl"><label htmlFor="focus">Focus topic</label><small>deep dive only</small></div>
+                  <select id="focus" value={cfg.focus_topic ?? ""} onChange={(e) => set("focus_topic", e.target.value || null)}>
+                    <option value="">Largest topic in my questions (default)</option>
+                    {topicList.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                  <div className="hint">{topicList.length ? "The interviewer stays on this topic and goes deeper." : "Choose questions with topics in step 3 to pick one."}</div></div>
+              )}
+              {cfg.strategy === "resume" && !resumeOk && <div className="notice warn small" role="status" style={{ margin: 0 }}>Resume-based needs resume questions. Add some in step 3, or pick another strategy.</div>}
+            </>}
+            <div className="fld"><div className="lbl">Time limit<small>{minutesLabel(cfg.time_limit_minutes)}</small></div>
+              <Seg label="Time limit" size="sm" value={cfg.time_limit_minutes ?? 0} onChange={(v) => set("time_limit_minutes", v === 0 ? null : v)}
+                options={[0, 15, 30, 45, 60, 90].map((v) => ({ value: v, label: v === 0 ? "None" : `${v} min`, aria: v === 0 ? "No time limit" : `${v} minutes` }))} />
+              <div className="hint">No new question starts after the limit; you can still finish the one you are on.</div></div>
+          </Section>
+
+          <Section step={3} icon="list" title="Questions" desc="Pick what you’ll be asked and in which order">
             <div className="fld"><div className="lbl">Question source{!ready.length && <small><a href="#/resumes">{(resumes.data?.length ?? 0) ? "Your resume is still being read" : "Add a resume"}</a> to get questions about your own experience</small>}</div>
               <Seg label="Question source" value={source} onChange={setSource} options={(["bank", "resume", "both"] as const).map((v) => ({ value: v, label: SOURCE_LABEL[v], icon: v === "bank" ? "list" : v === "resume" ? "file" : "layers", disabled: v !== "bank" && !ready.length }))} /></div>
             {source !== "resume" && <>
             <div className="row between">
               <Seg label="Select questions" value={mode} onChange={setMode} options={[
                 { value: "all", label: `All questions (${questions.length})` }, { value: "selected", label: `Selected (${selected.size})` }]} />
-              <Seg label="Question order" value={cfg.order} onChange={(v) => set("order", v)} options={[
-                { value: "supplied", label: "Supplied order", icon: "list" }, { value: "shuffled", label: "Shuffle", icon: "shuffle" }]} />
+              {!adaptive && <Seg label="Question order" value={cfg.order} onChange={(v) => set("order", v)} options={[
+                { value: "supplied", label: "Supplied order", icon: "list" }, { value: "shuffled", label: "Shuffle", icon: "shuffle" }]} />}
             </div>
             {(sets.data?.length ?? 0) > 1 && (
               <div className="fld"><div className="lbl"><label htmlFor="qset">Question set</label></div>
@@ -261,14 +298,63 @@ export default function Setup() {
               <ResumeQuestionsPanel resumes={ready} settings={gen} onSettings={setGen} questions={rqs} onQuestions={setRqs} saveToBank={saveToBank} onSaveToBank={setSaveToBank}
                 cloud={!!cloud} aiConfig={ai.data?.config ?? null} onResumesChanged={() => void resumes.reload()} />
             </>}
-            {source === "both" && (
+            {ready.length > 0 && (
+              <div className="auto-resume">
+                <div className="trows"><div className={`trow2 ${autoOn ? "on" : ""}`}><span className="ti"><Icon name="file" /></span>
+                  <div className="t"><b>Add questions from my resume automatically (offline)</b><span>Built instantly on this computer from the claims in your resume. No AI call, nothing is sent anywhere.</span></div>
+                  <Switch label="Add questions from my resume automatically" checked={autoOn} onChange={(v) => setAuto((a) => ({ ...a, on: v, id: a.id ?? ready[0]?.id ?? null }))} /></div></div>
+                {autoOn && (
+                  <div className="auto-opts">
+                    {ready.length > 1 && <div className="fld"><div className="lbl"><label htmlFor="auto-resume">Resume</label></div>
+                      <select id="auto-resume" value={autoId ?? ""} onChange={(e) => setAuto((a) => ({ ...a, id: Number(e.target.value) }))}>{ready.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}</select></div>}
+                    <div className="fld"><div className="lbl"><label htmlFor="auto-count">Number of questions</label><small>1 to 20</small></div>
+                      <input id="auto-count" type="number" inputMode="numeric" min={1} max={20} value={auto.count} style={{ width: 100 }}
+                        onChange={(e) => setAuto((a) => ({ ...a, count: Math.max(1, Math.min(20, Math.round(Number(e.target.value)) || 1)) }))} /></div>
+                  </div>
+                )}
+              </div>
+            )}
+            {(source === "both" || (autoOn && useBank)) && !adaptive && (
               <div className="fld"><div className="lbl">Order<small>{(() => { const seq = mixSequence(mix, counts.bank, counts.resume); return mix === "shuffled" ? "all questions mixed at random" : seq.length ? `${seq.slice(0, 10).map((x) => (x === "B" ? "bank" : "resume")).join(" · ")}${seq.length > 10 ? " …" : ""}` : ""; })()}</small></div>
                 <Seg label="Order of bank and resume questions" value={mix} onChange={setMix} options={(["resume_first", "bank_first", "interleave", "shuffled"] as const).map((v) => ({ value: v, label: MIX_LABEL[v] }))} />
                 <div className="hint">“Supplied order / Shuffle” above still decides the order of the bank questions among themselves.</div></div>
             )}
           </Section>
 
-          <Section step={4} icon="target" title="Evaluation" desc="How strictly your answers are graded">
+                    <Section step={4} icon="voice" title="Interviewer" desc="Choose the voice and how much the interviewer probes">
+            <div className="fld"><div className="lbl">Voice<small>{!voices.data ? "" : isSystem ? `${sysVoices === null ? "…" : sysVoices.length} offline voices on this computer · press ▶ to hear one` : `Phonon · ${voices.data.voices.length} voices · press ▶ to hear one`}</small></div>
+              <div className="vsearch"><Icon name="search" /><input type="search" aria-label="Search voices" placeholder="Search voices…" value={vsearch} onChange={(e) => setVsearch(e.target.value)} /></div>
+              <div className="vgrid" role="radiogroup" aria-label="Voice" ref={vgrid}>
+                {!voices.data && !voices.error && [0, 1, 2, 3, 4, 5].map((i) => <span key={`sk${i}`} className="skel" style={{ height: 44 }} aria-hidden />)}
+                {voiceList.map((v) => {
+                  const playing = speech.key === `vp-${v.id}` && speech.status !== "idle";
+                  return (
+                    <div key={v.id} role="radio" aria-checked={cfg.voice === v.id} tabIndex={0} className={`vchip ${cfg.voice === v.id ? "on" : ""}`} onClick={() => set("voice", v.id)}
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); set("voice", v.id); } }}>
+                      <span className="vn" title={v.full}>{v.label}</span>
+                      <button className="vplay" aria-label={`Preview voice ${v.label}`} title={playing ? "Stop" : "Preview"} onClick={(e) => { e.stopPropagation(); previewVoice(v.id); }}>
+                        {speech.key === `vp-${v.id}` && speech.status === "loading" ? <span className="spinner" style={{ width: 12, height: 12, borderWidth: 2 }} /> : playing ? <Stop /> : <Icon name="vol" size={15} />}</button>
+                    </div>
+                  );
+                })}
+                {voiceList.length === 0 && <div className="muted small">No voice matches “{vsearch}”.</div>}
+              </div>
+              {isSystem && sysVoices !== null && sysVoices.length === 0 && <div className="notice info small" style={{ marginTop: 8 }}>No offline voice was found, so questions will be shown as text only. Windows: Settings → Time &amp; language → Speech → Add voices. Linux: install <b>speech-dispatcher</b> and <b>espeak-ng</b>. Chrome’s online “Google” voices are never used.</div>}
+              {voices.error && <div className="hint" style={{ color: "var(--bad)" }}>{voices.error}</div>}
+              {speech.key?.startsWith("vp-") && speech.error && <div className="hint" style={{ color: "var(--bad)" }}>{speech.error}</div>}
+            </div>
+            <div className="grid2" style={{ alignItems: "start" }}>
+              <div className="fld"><div className="lbl">Playback speed<small>{cfg.speech_speed}×</small></div>
+                <Seg label="Playback speed" size="sm" value={cfg.speech_speed} onChange={(v) => { set("speech_speed", v); speaker.setRate(v); }}
+                  options={[0.75, 1, 1.25, 1.5].map((v) => ({ value: v, label: `${v}×`, aria: `Speed ${v}x` }))} />
+                <div className="hint">{isSystem ? "Applied by your computer’s voice." : "Phonon only speaks at 1×; the browser’s player adjusts speed."}</div></div>
+              <div className="fld"><div className="lbl">Max follow-ups per question<small>{cfg.max_followups === 0 ? "off" : `up to ${cfg.max_followups}`}</small></div>
+                <Seg label="Max follow-ups" size="sm" value={cfg.max_followups} onChange={(v) => set("max_followups", v)}
+                  options={[0, 1, 2, 3].map((v) => ({ value: v, label: v === 0 ? "None" : String(v), aria: `Max follow-ups: ${v}` }))} />
+                <div className="hint">A hard limit; follow-ups are only asked when they add value.</div></div>
+            </div>
+          </Section>
+          <Section step={5} icon="target" title="Evaluation" desc="How strictly your answers are graded">
             <div className="fld"><div className="lbl">Strictness</div>
               <OptionCards label="Evaluation strictness" cols={3} value={cfg.strictness} onChange={(v) => set("strictness", v)} options={([
                 ["lenient", "Lenient", "smile"], ["balanced", "Balanced", "target"], ["strict", "Strict", "bolt"]] as const).map(([value, title, ic]) => ({
@@ -276,7 +362,7 @@ export default function Setup() {
             <div className="notice info small" role="note" style={{ margin: 0 }}><b>Scores and feedback come at the end.</b> While you practice there is no score after each answer. When the interview is over you get every answer’s score, every follow-up’s score and your final score in one report.</div>
           </Section>
 
-          <Section step={5} icon="settings" title="Experience" desc="Audio and input preferences">
+          <Section step={6} icon="settings" title="Experience" desc="Audio and input preferences">
             <div className="trows">
               <div className={`trow2 ${cfg.question_audio === "auto" ? "on" : ""}`}><span className="ti"><Icon name="vol" /></span>
                 <div className="t"><b>Read each question aloud</b><span>Plays automatically when a question appears; otherwise use Play.</span></div>
@@ -310,7 +396,7 @@ export default function Setup() {
             {active.length > 0 && <div className="notice warn small" role="status" style={{ marginTop: 0 }}><b>An interview is still active.</b> Continue or end “{active[0].title}” to start a new one.</div>}
             {count === 0 && <div className="notice warn small" role="status" style={{ marginTop: 0 }}>{source === "bank" ? "No questions selected yet." : rqs.length ? "Fix or remove the empty questions first." : "Generate and review your resume questions first."}</div>}
             <button className="btn primary big block" disabled={!canStart} onClick={start}>{busy ? "Starting…" : <>Start Interview <Icon name="arrowr" /></>}</button>
-            <div className="est">{count ? <><span className="est-ic"><Icon name="clock" /></span><span><b>{count}</b> question{count === 1 ? "" : "s"} <i className="est-dot" aria-hidden="true" /> about <b>{estMin} min</b></span></> : <><span className="est-ic"><Icon name="list" /></span><span>Add questions to begin</span></>}</div>
+            <div className="est">{count ? <><span className="est-ic"><Icon name="clock" /></span><span>{adaptive ? "up to " : ""}<b>{count}</b> question{count === 1 ? "" : "s"} <i className="est-dot" aria-hidden="true" /> about <b>{estShown} min</b></span></> : <><span className="est-ic"><Icon name="list" /></span><span>Add questions to begin</span></>}</div>
           </div>
         </aside>
       </div>

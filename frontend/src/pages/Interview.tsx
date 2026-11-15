@@ -10,6 +10,8 @@ import { Loading } from "../components/Loaders";
 import Player, { Orb } from "../components/Player";
 import { Confirm, ErrorNotice, Modal, useAsync, useFullscreen, useToast } from "../components/ui";
 import { MicRecorder } from "../recorder";
+import RunInfo, { WhyThisQuestion, useRemaining } from "../components/RunInfo";
+import { currentFollowupKind, endReasonLabel, followupLabel } from "../intel";
 import type { InterviewState, Turn } from "../types";
 
 const draftKey = (iid: number, tid: number) => `lai.draft.${iid}.${tid}`;
@@ -66,6 +68,7 @@ export default function Interview({ id }: { id: number }) {
   const paused = st?.status === "paused";
   const fsMode = !!st && !finished && !paused && st.phase !== "feedback";
   useFullscreen(fsMode);
+  const remaining = useRemaining(st);
 
   // poll while the local model is evaluating (survives refresh: the server owns the state)
   useEffect(() => {
@@ -124,7 +127,9 @@ export default function Interview({ id }: { id: number }) {
   const lastEval = (cur?.thread ?? []).filter((t) => t.status === "evaluated").slice(-1)[0];
   const onFollowup = st.phase === "feedback" ? lastEval?.kind === "followup" : isFollowup;
   const fuNo = st.phase === "feedback" ? lastEval?.seq ?? 1 : turn?.seq ?? 1;
-  const where = onFollowup ? `Follow-up ${fuNo} of ${cur?.item.followups_max ?? 1}` : `Question ${p.position ?? p.finished} of ${p.total}`;
+  const where = onFollowup ? `Follow-up ${fuNo} of ${cur?.item.followups_max ?? 1}` : `Question ${p.position ?? p.finished} of ${p.planned ? "up to " : ""}${p.total}`;
+  const fuKind = currentFollowupKind(cur?.thread ?? [], turn, st.adaptive?.current_decision);       // the follow-up on screen
+  const pendingKind = followupLabel(lastEval?.evaluation?.followup_kind);                              // the follow-up that comes next
   const micOn = st.config.mic_enabled && MicRecorder.supported();
 
   const submit = () => {
@@ -179,12 +184,15 @@ export default function Interview({ id }: { id: number }) {
           </button>
         </div>
 
+        <RunInfo st={st} remaining={remaining} />
+
         {turn ? (
           <Player key={turn.id} audioKey={`t${turn.id}`} text={turn.question_text} voice={st.config.voice} initialRate={st.config.speech_speed}>
-            {isFollowup && <div className="orb-label" style={{ marginBottom: 6, textAlign: "center" }}><span className="badge accent">Follow-up</span> {cur?.item.topic && <span className="badge">{cur.item.topic}</span>}</div>}
+            {isFollowup && <div className="orb-label" style={{ marginBottom: 6, textAlign: "center" }}><span className="badge accent">Follow-up</span> {fuKind && <span className="badge" data-testid="fu-kind">{fuKind}</span>} {cur?.item.topic && <span className="badge">{cur.item.topic}</span>}</div>}
             {!isFollowup && (cur?.item.topic || cur?.item.difficulty || cur?.item.source === "resume") && <div style={{ textAlign: "center", marginBottom: 8 }}>{cur?.item.source === "resume" && <span className="badge rz-resume-chip" title={cur.item.resume_name ?? undefined}><Icon name="file" size={13} />From your resume</span>} {cur?.item.topic && <span className="badge accent">{cur.item.topic}</span>} {cur?.item.difficulty && <span className="badge" style={{ textTransform: "capitalize" }}>{cur.item.difficulty}</span>}</div>}
             <div className="interview-q">{turn.question_text}</div>
             {isFollowup && turn.followup_reason && <div className="why">Why I’m asking: {turn.followup_reason}</div>}
+            {!isFollowup && st.mode === "adaptive" && <WhyThisQuestion reason={st.adaptive?.current_reason} />}
           </Player>
         ) : <div className="orb-wrap"><Orb live={false} /></div>}
 
@@ -265,12 +273,13 @@ export default function Interview({ id }: { id: number }) {
           <b>{where}</b>
         </div>
       )}
+      {!finished && <RunInfo st={st} remaining={remaining} />}
       <ErrorNotice error={error} />
 
       {finished && (
         <div className="card">
           <h2>{st.status === "completed" ? "Interview complete" : "Interview ended"}</h2>
-          <p className="muted">{p.answered} answered · {p.skipped} skipped · {p.unanswered} not reached.</p>
+          <p className="muted">{p.answered} answered · {p.skipped} skipped · {p.unanswered} not reached.{endReasonLabel(st.end_reason) ? ` ${endReasonLabel(st.end_reason)}.` : ""}</p>
           <FinalScore id={id} />
           <a className="btn primary" href={`#/report/${id}`}>View the full report <Icon name="arrowr" /></a>
         </div>
@@ -293,7 +302,7 @@ export default function Interview({ id }: { id: number }) {
           {shown.map((t, i) => <FeedbackTurn key={t.id} t={t} followup={i === shown.length - 1 ? cur?.pending_followup ?? null : null} />)}
           {cur?.pending_followup && (
             <div className="followup-box">
-              <div className="hd"><i><Icon name="msg" size={14} /></i>Follow-up Question</div>
+              <div className="hd"><i><Icon name="msg" size={14} /></i>Follow-up Question{pendingKind && <span className="badge" style={{ marginLeft: 8 }}>{pendingKind}</span>}</div>
               <div className="q">{cur.pending_followup.question}</div>
             </div>
           )}
@@ -338,7 +347,7 @@ function ProgressList({ st, pct }: { st: InterviewState; pct: number }) {
   const p = st.progress;
   return (
     <div>
-      <div className="progress-head"><h2 style={{ margin: 0 }}>Interview Progress</h2><span className="muted small">{p.finished} of {p.total} Questions</span></div>
+      <div className="progress-head"><h2 style={{ margin: 0 }}>Interview Progress</h2><span className="muted small">{p.finished} of {p.planned ? "up to " : ""}{p.total} Questions</span></div>
       <div className="pbar" style={{ marginTop: 10 }} role="progressbar" aria-valuemin={0} aria-valuemax={p.total} aria-valuenow={p.finished}><div className="bar"><i style={{ width: `${pct}%` }} /></div><span>{pct}%</span></div>
       <ul className="plist">
         {st.items.map((it) => {

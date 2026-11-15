@@ -3,11 +3,12 @@ import { api } from "../api";
 import { speaker } from "../audio";
 import Feedback from "../components/Feedback";
 import { Scorecard, Skills } from "../components/Scorecard";
+import ReportIntel from "../components/ReportIntel";
 import { fmtUsd } from "../aiHelpers";
 import { ScoreRing, scoreTone } from "../components/charts";
 import Icon from "../components/Icon";
 import { SkeletonRows } from "../components/Skeleton";
-import { ErrorNotice, fmtShort, minutesBetween, scoreClass, useAsync, useToast } from "../components/ui";
+import { ErrorNotice, Menu, fmtShort, minutesBetween, scoreClass, useAsync, useToast } from "../components/ui";
 import type { Report as ReportT } from "../types";
 import { CLAIM_VERDICT_TONE } from "../resumeHelpers";
 import { useSpeaker } from "./useSpeaker";
@@ -23,13 +24,14 @@ export default function ReportPage({ id }: { id: number }) {
   const speech = useSpeaker();
   const pending = r?.narrative_status === "pending";
   const [pdf, setPdf] = useState<"idle" | "waiting" | "building">("idle");
+  const [redact, setRedact] = useState(false);       // the PDF being prepared is the share-safe copy
   useEffect(() => { if (pdf === "waiting" && r && !pending) setPdf("building"); }, [pdf, pending, r]);      // the written summary is finished first, so it is in the file
   useEffect(() => {
     if (pdf !== "building") return;
     let alive = true;
     void (async () => {
       try {
-        const [name] = await Promise.all([api.downloadReportPdf(id), new Promise((res) => setTimeout(res, 700))]);   // never a flicker: the loader stays long enough to be seen
+        const [name] = await Promise.all([api.downloadReportPdf(id, redact), new Promise((res) => setTimeout(res, 700))]);   // never a flicker: the loader stays long enough to be seen
         toast("ok", `Saved ${name}`);
       } catch (e) { toast("error", (e as Error).message); }
       finally { if (alive) setPdf("idle"); }
@@ -60,13 +62,21 @@ export default function ReportPage({ id }: { id: number }) {
           <div className="muted small">{fmtShort(r.interview.created_at)} · {s.total_questions} Question{s.total_questions === 1 ? "" : "s"}{mins ? ` · ${mins} min` : ""} · {r.interview.status}</div>
         </div>
         <div className="row no-print">
-          <button className="btn soft" disabled={pdf !== "idle"} aria-busy={pdf !== "idle"} onClick={() => setPdf(pending ? "waiting" : "building")}
+          <button className="btn soft" disabled={pdf !== "idle"} aria-busy={pdf !== "idle"} onClick={() => { setRedact(false); setPdf(pending ? "waiting" : "building"); }}
             title="Saves the report as a PDF file">
             {pdf === "idle" ? <Icon name="download" /> : <span className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} aria-hidden="true" />}
             {pdf === "waiting" ? "Waiting for the summary…" : pdf === "building" ? "Preparing PDF…" : "Export as PDF"}
           </button>
           <a className="btn soft" href={api.exportReportUrl(id, "json")} download><Icon name="file" />Export as JSON</a>
           <a className="btn" href={api.exportReportUrl(id, "md")} download><Icon name="download" />Markdown</a>
+          <Menu label="Share-safe export (no answers)" trigger={<><Icon name="shield" />Share-safe export (no answers)</>}>
+            {(close) => (<>
+              <div className="exp-note" style={{ padding: "4px 11px 6px", maxWidth: 260 }}>A copy without your answers, evidence quotes or resume excerpts, safe to send to someone else.</div>
+              <button disabled={pdf !== "idle"} onClick={() => { close(); setRedact(true); setPdf(pending ? "waiting" : "building"); }}><Icon name="download" />PDF</button>
+              <a className="menu-link" role="menuitem" href={api.exportReportUrl(id, "md", true)} download onClick={close}><Icon name="download" />Markdown</a>
+              <a className="menu-link" role="menuitem" href={api.exportReportUrl(id, "json", true)} download onClick={close}><Icon name="file" />JSON</a>
+            </>)}
+          </Menu>
         </div>
       </div>
 
@@ -139,6 +149,8 @@ export default function ReportPage({ id }: { id: number }) {
           <p className="muted small" style={{ margin: "8px 0 0" }}>Solid 7+ · Shaky 5–7 · Weak below 5. Skipped and unanswered questions are not counted.</p>
         </div>
       )}
+
+      <ReportIntel r={r} />
 
       {r.skills && <Skills skills={r.skills} />}
 

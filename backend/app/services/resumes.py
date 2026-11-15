@@ -190,6 +190,8 @@ class ResumeService:
         prof = self._profile(r["profile_json"])
         if r["status"] != "ready" or prof is None:
             raise AppError(409, "resume_not_ready", "This resume has not been organised yet, so no questions can be built from it.")
+        # building is local, but in cloud mode each answer is graded in the cloud together with the claim excerpt: same consent rule
+        self._require_consent([(rid, r["name"], prof, r["consent_cloud"])])
         data = candidate_profile.build(rid, r["name"], prof, r["raw_text"] or "", question_limit=count)
         return data["suggested_questions"][:count]
 
