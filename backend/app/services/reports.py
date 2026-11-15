@@ -86,7 +86,7 @@ def skill_averages(turns_by_question: list[list[dict]]) -> list[dict[str, Any]]:
     core = {"correctness", "completeness", "depth", "practical_application", "clarity", "production_awareness"}
     # the six v1 skills are always listed (stable shape); profile-specific ones only when at least one answer was scored on them
     return [{"key": k, "label": label, "average": round(sum(v) / len(v), 1) if v else None, "answers": len(v)}
-            for (k, label), v in zip(SKILLS, sums.values()) if k in core or v]
+            for (k, label), v in zip(SKILLS, sums.values(), strict=False) if k in core or v]
 
 
 def build_report(c: sqlite3.Connection, iid: int) -> dict[str, Any]:

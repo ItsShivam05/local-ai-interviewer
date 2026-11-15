@@ -8,7 +8,7 @@ from typing import Any, Optional
 
 from ..config import Settings
 from ..db import Database, utcnow
-from ..errors import AppError, bad_request, not_found
+from ..errors import bad_request, not_found
 from ..parsing import normalize_for_dedupe, preview_json, preview_text
 from ..schemas import (ImportCommitIn, ImportCommitOut, ImportPreviewIn, ImportPreviewOut, QuestionIn, RubricSettings)
 

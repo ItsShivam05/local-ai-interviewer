@@ -4,10 +4,8 @@ from __future__ import annotations
 import json
 import logging
 import os
-import shutil
 import sqlite3
 import stat
-import sys
 from concurrent.futures import Future
 
 import pytest
@@ -507,7 +505,6 @@ def test_tesseract_lookup_order_override_then_path():
 
 @pytest.mark.parametrize("available", [True, False])
 def test_setup_check_lists_ocr_as_optional_and_never_blocking(client, monkeypatch, available):
-    from app.routers import system
     status = {"available": available, "enabled": True, "path": "/x/tesseract" if available else None, "version": "tesseract 5.4.0" if available else None,
               "langs": "eng", "reason": None if available else "not installed", "os": "macos", "install": "brew install tesseract", "install_all": dict(rx.INSTALL_COMMANDS)}
     monkeypatch.setattr(rx, "ocr_status", lambda *a, **k: dict(status))

@@ -37,6 +37,7 @@ export default function ReportPage({ id }: { id: number }) {
       finally { if (alive) setPdf("idle"); }
     })();
     return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once per "building" transition; `redact` is set in the same update, and re-running on a new `toast` identity would download twice
   }, [pdf, id]);
   useEffect(() => {
     if (!pending) return;

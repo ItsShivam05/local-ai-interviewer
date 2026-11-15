@@ -13,7 +13,7 @@ from pydantic import BaseModel, ValidationError
 from ..schemas import DimensionScores, Evaluation, LLMEvaluation, RubricSettings, _str_list
 from . import eval_profiles, grounding
 from .ollama import LLMError, OllamaClient
-from .prompts import (PROMPT_VERSION, eval_schema_for, EVAL_SCHEMA, INTERPRET_SCHEMA, INTERPRET_SYSTEM, NARRATIVE_SCHEMA, NARRATIVE_SYSTEM, eval_system_prompt, eval_user_prompt,
+from .prompts import (PROMPT_VERSION, eval_schema_for, INTERPRET_SCHEMA, INTERPRET_SYSTEM, NARRATIVE_SCHEMA, NARRATIVE_SYSTEM, eval_system_prompt, eval_user_prompt,
                       interpret_user_prompt, FOLLOWUP_SCHEMA, FOLLOWUP_SYSTEM, followup_user_prompt,
                       repair_prompt, RESUME_SAFETY)
 

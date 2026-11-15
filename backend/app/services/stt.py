@@ -44,7 +44,7 @@ class TranscriptionService:
     # ---------------------------------------------------------------- availability
     def _import(self):
         try:
-            import faster_whisper  # noqa: F401
+            import faster_whisper  # availability check: the import itself is the test
 
             return faster_whisper
         except ImportError:

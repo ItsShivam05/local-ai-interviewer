@@ -256,7 +256,7 @@ def _score(v: Any) -> int:
     try:
         n = float(v)
     except (TypeError, ValueError):
-        raise ValueError("score must be numeric")
+        raise ValueError("score must be numeric") from None
     return int(round(min(10.0, max(0.0, n))))
 
 

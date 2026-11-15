@@ -19,7 +19,7 @@ from pydantic import BaseModel, field_validator
 from ..schemas import ResumeProfile
 from .evaluator import too_similar
 from .ollama import LLMError
-from .prompts import (CLAIM_EXCERPT_CHARS, RESUME_QUESTION_KINDS, RESUME_QUESTIONS_SCHEMA, resume_questions_system,
+from .prompts import (CLAIM_EXCERPT_CHARS, RESUME_QUESTION_KINDS, resume_questions_system,
                       resume_questions_user_prompt)
 
 log = logging.getLogger("interviewer.resume_questions")
@@ -279,7 +279,7 @@ class QuestionWriter:
         total = len(slots)
         failures = 0
         errors: list[str] = []
-        for rnd in range(max_rounds):
+        for _ in range(max_rounds):
             if not pending or self.cancelled():
                 break
             groups: dict[str, tuple[Claim, list[Slot]]] = {}

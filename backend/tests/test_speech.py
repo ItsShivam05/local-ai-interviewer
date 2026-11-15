@@ -3,7 +3,7 @@ import wave
 
 import pytest
 
-from app.services.tts import SpeechError, chunk_text, pcm_is_silent, wav_from_pcm
+from app.services.tts import chunk_text, pcm_is_silent, wav_from_pcm
 
 
 def test_chunking_respects_sentences_and_limit():

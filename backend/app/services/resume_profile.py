@@ -150,7 +150,7 @@ def coerce_profile(raw: Any) -> ResumeProfile:
     """Model output -> a valid ResumeProfile: wrong types become empty, long text is cut, lists are capped."""
     r = _d(raw)
     c = _d(r.get("contact"))
-    current = lambda e: bool(e.get("is_current")) if not isinstance(e.get("is_current"), str) else e["is_current"].strip().lower() in {"true", "yes", "1"}  # noqa: E731
+    current = lambda e: bool(e.get("is_current")) if not isinstance(e.get("is_current"), str) else e["is_current"].strip().lower() in {"true", "yes", "1"}
     return ResumeProfile.model_validate({
         "contact": {"name": _t(c.get("name"), 200), "email": _t(c.get("email"), 200), "phone": _t(c.get("phone"), 80), "location": _t(c.get("location"), 200),
                     "links": _tl(c.get("links"), LIMITS["links"], 300)},

@@ -22,7 +22,7 @@ COLD_LOAD_MS = 1000       # a model load slower than this is what makes the comp
 
 def from_ollama(reply: dict[str, Any], model: str, purpose: str, provider: str = "local") -> dict[str, Any]:
     """The metrics block of an Ollama reply (all durations are nanoseconds) -> our record (milliseconds)."""
-    ms = lambda key: int(round((reply.get(key) or 0) / 1e6))  # noqa: E731
+    ms = lambda key: int(round((reply.get(key) or 0) / 1e6))
     return {"model": model, "purpose": purpose, "provider": provider, "prompt_tokens": reply.get("prompt_eval_count"), "output_tokens": reply.get("eval_count"),
             "load_ms": ms("load_duration"), "prompt_ms": ms("prompt_eval_duration"), "output_ms": ms("eval_duration"), "total_ms": ms("total_duration")}
 
@@ -105,7 +105,7 @@ class UsageRecorder:
                        SUM(COALESCE(cost_usd, 0)) AS cost, SUM(CASE WHEN provider = 'cloud' AND cost_usd IS NULL THEN 1 ELSE 0 END) AS unpriced,
                        MAX(created_at) AS last_at
                 FROM llm_usage{where} GROUP BY provider, model, purpose ORDER BY provider DESC, model, purpose""", (COLD_LOAD_MS, *args)).fetchall()
-        sec = lambda ms, n=1: round(ms / n / 1000, 1)  # noqa: E731
+        sec = lambda ms, n=1: round(ms / n / 1000, 1)
         return [{"provider": r["provider"], "model": r["model"], "purpose": r["purpose"], "calls": r["calls"], "prompt_tokens": r["prompt_tokens"], "output_tokens": r["output_tokens"],
                  "avg_seconds": sec(r["total_ms"], r["calls"]), "total_seconds": sec(r["total_ms"]), "fastest_seconds": sec(r["min_ms"]), "slowest_seconds": sec(r["max_ms"]),
                  "avg_load_seconds": sec(r["load_ms"], r["calls"]), "avg_read_seconds": sec(r["prompt_ms"], r["calls"]), "avg_write_seconds": sec(r["output_ms"], r["calls"]),
@@ -134,7 +134,7 @@ class UsageRecorder:
         with self.db.read() as c:
             all_ = c.execute(q).fetchone()
             day = c.execute(q + " WHERE created_at >= ?", (start,)).fetchone()
-        pack = lambda r: {"calls": r["n"] or 0, "prompt_tokens": r["p"] or 0, "output_tokens": r["o"] or 0, "seconds": round((r["t"] or 0) / 1000, 1),  # noqa: E731
+        pack = lambda r: {"calls": r["n"] or 0, "prompt_tokens": r["p"] or 0, "output_tokens": r["o"] or 0, "seconds": round((r["t"] or 0) / 1000, 1),
                           "cost_usd": round(r["cost"] or 0, 6), "cloud_calls": r["cloud_calls"] or 0, "unpriced_calls": r["unpriced"] or 0}
         return {"all_time": pack(all_), "today": pack(day)}
 

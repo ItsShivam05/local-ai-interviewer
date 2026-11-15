@@ -2,7 +2,7 @@
 import json
 import sqlite3
 
-from conftest import act, answer, start_interview
+from conftest import answer, start_interview
 from intel_fixtures import graded
 
 

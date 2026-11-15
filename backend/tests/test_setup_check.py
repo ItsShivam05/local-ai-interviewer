@@ -1,10 +1,8 @@
 """First-run setup: the report says exactly what is missing; the model can be downloaded with one click and a visible progress."""
 import time
 
-import pytest
 
 from app.services import setup_check
-from conftest import add_questions
 
 
 def report(client):

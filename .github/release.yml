@@ -1,0 +1,17 @@
+# Categories for GitHub's automatically generated release notes (used alongside CHANGELOG.md).
+changelog:
+  exclude:
+    labels: [dependencies]
+  categories:
+    - title: Breaking changes
+      labels: [breaking change]
+    - title: Security
+      labels: [security]
+    - title: New features
+      labels: [enhancement]
+    - title: Bug fixes
+      labels: [bug]
+    - title: Documentation
+      labels: [documentation]
+    - title: Other changes
+      labels: ["*"]

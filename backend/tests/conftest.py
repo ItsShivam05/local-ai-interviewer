@@ -199,7 +199,7 @@ def state(client, iid: int) -> dict:
 
 
 # ---------------------------------------------------------------- cloud mode (mock of Ollama cloud: no network, no credits)
-from fakecloud import KEY as CLOUD_KEY, FakeCloud, make_cloud  # noqa: E402
+from fakecloud import KEY as CLOUD_KEY, FakeCloud, make_cloud
 
 
 @pytest.fixture

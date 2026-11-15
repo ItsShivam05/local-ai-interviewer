@@ -77,7 +77,7 @@ def test_alternating_scores_do_not_oscillate():
 
 def test_cooldown_prevents_back_to_back_changes():
     _, st, _ = run([9, 9, 2, 9, 9], start=1)
-    for a, b in zip(st.level_history, st.level_history[1:]):
+    for a, b in zip(st.level_history, st.level_history[1:], strict=False):
         assert b["after_question"] - a["after_question"] >= ad.COOLDOWN
 
 
@@ -243,7 +243,7 @@ def test_reversal_needs_more_evidence_than_a_continuation():
             break
         q = next(x for x in p if x.id == d.pool_id)
         hist.append(asked(q, 8.5 if q.difficulty != "hard" else 4.0))
-    flips = sum(1 for a, b in zip(st.level_history, st.level_history[1:]) if (a["to"] > a["from"]) != (b["to"] > b["from"]))
+    flips = sum(1 for a, b in zip(st.level_history, st.level_history[1:], strict=False) if (a["to"] > a["from"]) != (b["to"] > b["from"]))
     assert len(st.level_history) <= 3 and flips <= 1
 
 

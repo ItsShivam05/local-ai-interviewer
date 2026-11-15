@@ -326,8 +326,8 @@ class ResumeService:
             self._set(rid, job_id, status="failed", stage_detail=None, error_code="file_missing",
                       error_message="The original PDF is missing from the data folder. Delete this resume and upload it again.")
             return
-        cancelled = lambda: not self._current(rid, job_id)  # noqa: E731
-        progress = lambda status, detail: self._set(rid, job_id, status=status, stage_detail=detail)  # noqa: E731
+        cancelled = lambda: not self._current(rid, job_id)
+        progress = lambda status, detail: self._set(rid, job_id, status=status, stage_detail=detail)
         try:
             res = rx.extract_pages(data, self.settings, progress=progress, cancelled=cancelled, ocr=self.ocr_runner)
         except rx.PdfError as e:

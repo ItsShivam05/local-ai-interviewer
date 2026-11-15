@@ -1,32 +1,74 @@
-# Runs the automated checks on macOS, Windows and Linux for every push and pull request.
-# Everything here is local: Ollama is mocked in the backend tests, so no model is downloaded.
+# Checks every pull request and every push to main. Ollama is mocked in the backend tests, so no model is ever downloaded
+# and nothing needs a GPU, a microphone or a cloud account.
 name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
+  workflow_dispatch:
+
+# A newer push to the same branch or PR cancels the run in progress (no duplicate work).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
+  lint:
+    name: Lint, docs and repository checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Python lint (ruff, bug-finding rules)
+        run: pipx run ruff==0.8.6 check --output-format=github .
+      - name: Markdown links, images and anchors
+        run: python scripts/check_docs.py
+      - name: Frontend lint (ESLint, no warnings allowed)
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run lint
+
   backend:
-    name: Backend + launcher tests (${{ matrix.os }})
+    name: Backend tests (${{ matrix.os }}, Python ${{ matrix.python }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ["3.12"]
+        include:
+          - os: ubuntu-latest      # the oldest Python the README promises
+            python: "3.10"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: "3.12"
-      - name: Install backend dependencies
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+      - name: Install dependencies
         run: python -m pip install -r backend/requirements.txt -r backend/requirements-dev.txt
       - name: Run tests
-        run: python -m pytest backend -q
+        run: python -m pytest backend -q -ra --cov=backend/app --cov-report=term-missing:skip-covered
 
   frontend:
-    name: Frontend build + unit tests (${{ matrix.os }})
+    name: Frontend typecheck, tests and build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -35,10 +77,12 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
@@ -47,16 +91,17 @@ jobs:
   launcher-smoke:
     name: Launcher smoke test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
       # `check` is read-only and exits 1 here because Ollama is not installed on the runner. What matters is that it runs

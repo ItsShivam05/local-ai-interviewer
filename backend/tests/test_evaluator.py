@@ -1,7 +1,7 @@
 import pytest
 
 from app.schemas import DimensionScores, LLMEvaluation, RubricSettings
-from app.services.evaluator import (EvalContext, Evaluator, FollowUpDecision, compute_score, decide_followup,
+from app.services.evaluator import (EvalContext, Evaluator, compute_score, decide_followup,
                                     is_non_attempt, too_similar, verdict_for)
 from app.services.ollama import LLMError
 from conftest import good_eval, make_client_for

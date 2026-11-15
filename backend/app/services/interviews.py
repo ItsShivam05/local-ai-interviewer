@@ -282,7 +282,7 @@ class InterviewService:
         if len(body.text) > MAX_ANSWER_CHARS:
             raise bad_request("answer_too_long", f"Answers are limited to {MAX_ANSWER_CHARS} characters.")
         with self.db.tx() as c:
-            iv = self._expect(c, iid, phase="awaiting_answer", turn_id=body.turn_id)
+            self._expect(c, iid, phase="awaiting_answer", turn_id=body.turn_id)   # compare-and-set: raises 409 on a stale or repeated submit
             turn = c.execute("SELECT * FROM turns WHERE id=?", (body.turn_id,)).fetchone()
             if not turn or turn["status"] != "asked":
                 raise conflict("already_submitted", "This question was already answered.")

@@ -121,7 +121,7 @@ def update_level(state: EngineState, history: list[Asked]) -> tuple[EngineState,
         reason = "Two questions in a row were skipped, so the next one is easier."
     elif len(recent_scored) >= COOLDOWN:
         w = [CONF_WEIGHT.get(h.confidence, 0.7) for h in recent_scored]
-        avg = sum(h.score * x for h, x in zip(recent_scored, w)) / sum(w)
+        avg = sum(h.score * x for h, x in zip(recent_scored, w, strict=False)) / sum(w)
         low_conf = sum(1 for h in recent_scored if h.confidence == "low")
         if low_conf * 2 > len(recent_scored):
             return state, None                       # the evidence itself is unreliable: hold the level

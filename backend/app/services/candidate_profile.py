@@ -173,7 +173,7 @@ def experience_summary(p: ResumeProfile, today: Optional[date] = None) -> dict[s
             merged.append([s, e])
     months = sum(_months(s, e) for s, e in merged)
     gaps = []
-    for (_, a_end), (b_start, _) in zip(merged, merged[1:]):
+    for (_, a_end), (b_start, _) in zip(merged, merged[1:], strict=False):
         m = _months(a_end, b_start) - 2          # adjacent months are not a gap
         if m >= 6:
             gaps.append({"from": a_end.isoformat()[:7], "to": b_start.isoformat()[:7], "months": m})

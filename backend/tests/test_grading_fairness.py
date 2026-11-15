@@ -4,9 +4,9 @@ import json
 import pytest
 
 from app.schemas import DimensionScores, LLMEvaluation, RubricSettings
-from app.services.evaluator import (EvalContext, Evaluator, compute_score, drop_unclear, question_level)
+from app.services.evaluator import (Evaluator, compute_score, drop_unclear, question_level)
 from app.services.prompts import VOICE_NOTE, eval_system_prompt, eval_user_prompt
-from conftest import act, add_questions, answer, good_eval, make_client_for, start_interview, state
+from conftest import add_questions, answer, good_eval, make_client_for, start_interview, state
 
 W = RubricSettings()
 # a correct, clear, complete answer to a *definition* question: little depth, no real-world example

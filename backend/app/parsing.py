@@ -111,7 +111,8 @@ def preview_json(raw: str, existing_texts: list[str]) -> ImportPreviewOut:
             q = QuestionIn(text=text, rubric=entry.get("rubric", entry.get("expected_answer")),
                            topic=entry.get("topic"), difficulty=entry.get("difficulty"))
         except Exception as e:  # pydantic ValidationError -> readable message
-            first = getattr(e, "errors", lambda: [{"msg": str(e)}])()[0]
+            details = e.errors() if hasattr(e, "errors") else []
+            first = details[0] if details else {"msg": str(e)}
             field = ".".join(str(x) for x in first.get("loc", ())) or "entry"
             errors.append(f"Entry {i}: invalid {field} ({first.get('msg')}).")
             continue

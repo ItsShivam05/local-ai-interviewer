@@ -5,7 +5,7 @@ import pytest
 from pypdf import PdfReader
 
 from app.services import report_pdf
-from conftest import act, add_questions, answer, good_eval, start_interview, state
+from conftest import add_questions, answer, good_eval, start_interview
 from test_interview_flow import always_ask
 
 

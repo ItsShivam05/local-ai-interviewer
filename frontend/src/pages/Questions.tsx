@@ -50,7 +50,7 @@ export default function Questions() {
   const [sort, setSort] = useState<Sort>("manual");
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const speech = useSpeaker();
-  const all = qs.data ?? [];
+  const all = useMemo(() => qs.data ?? [], [qs.data]);
   const filtering = !!(search.trim() || topicFilter || diffFilter) || sort !== "manual";
   const current = sets.data?.find((s) => s.id === setId);
 

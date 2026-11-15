@@ -2,7 +2,6 @@ import re
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
 
 from app.config import Settings, is_loopback_url
 

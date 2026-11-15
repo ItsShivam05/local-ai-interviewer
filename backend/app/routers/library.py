@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse
 
 from ..schemas import (ImportCommitIn, ImportCommitOut, ImportPreviewIn, ImportPreviewOut, QuestionIn, QuestionOut,
                        ReorderIn, RubricSettings, SetIn, SetOut)

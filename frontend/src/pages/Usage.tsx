@@ -39,7 +39,7 @@ export default function UsagePage() {
   const health = useAsync(() => { const f = force.current; force.current = false; return api.health(f); }, []);
   const refresh = async () => { force.current = true; await Promise.all([usage.reload(), health.reload()]); };
   const [confirm, setConfirm] = useState(false);
-  useEffect(() => { const t = setInterval(() => { if (!document.hidden) { void usage.reload(); void health.reload(); } }, 5000); return () => clearInterval(t); }, []); // eslint-disable-line react-hooks/exhaustive-deps   // live numbers, but not while the tab is hidden
+  useEffect(() => { const t = setInterval(() => { if (!document.hidden) { void usage.reload(); void health.reload(); } }, 5000); return () => clearInterval(t); }, []); // eslint-disable-line react-hooks/exhaustive-deps -- one timer for the page's lifetime: live numbers, but not while the tab is hidden
   const pick = (r: "today" | "all") => { setRange(r); try { localStorage.setItem(RANGE_KEY, r); } catch { /* ignore */ } };
   const pickProvider = (p: Provider) => { setProvider(p); try { localStorage.setItem(PROVIDER_KEY, p); } catch { /* ignore */ } };
 

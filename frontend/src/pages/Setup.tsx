@@ -85,7 +85,7 @@ export default function Setup() {
   const sysVoices = useSystemVoices(isSystem);
   const vgrid = useRef<HTMLDivElement>(null);
   const qs = useAsync(() => (setId ? api.questions(setId) : Promise.resolve([] as Question[])), [setId]);
-  const questions = qs.data ?? [];
+  const questions = useMemo(() => qs.data ?? [], [qs.data]);
 
   useEffect(() => { if (sets.data && setId == null) setSetId(sets.data[0]?.id ?? null); }, [sets.data, setId]);
   useEffect(() => { if (!pre) setSelected(new Set(questions.map((q) => q.id))); }, [qs.data]); // eslint-disable-line react-hooks/exhaustive-deps

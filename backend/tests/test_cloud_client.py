@@ -4,7 +4,7 @@ import json
 import httpx
 import pytest
 
-from app.services.cloud import CloudClient, api_name, with_schema
+from app.services.cloud import api_name, with_schema
 from app.services.ollama import LLMError
 from conftest import make_settings
 from fakecloud import KEY, FakeCloud, make_cloud

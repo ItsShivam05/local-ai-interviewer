@@ -51,7 +51,7 @@ class PdfError(Exception):
 # ---------------------------------------------------------------- pypdfium2 (optional import, so the app runs without it)
 def _pdfium():
     try:
-        import pypdfium2 as pdfium  # noqa: PLC0415
+        import pypdfium2 as pdfium
     except ImportError as e:  # pragma: no cover - exercised only when the dependency is missing
         raise PdfError("pdf_support_missing", "Reading PDFs needs the pypdfium2 package. Run the start script again (it installs it), "
                                               "or: pip install -r backend/requirements.txt") from e
@@ -291,7 +291,7 @@ def extract_pages(data: bytes, settings: Settings, *, progress: Optional[Callabl
                     res.error_message = (f"{pages_txt} of this PDF {'is a scanned image' if len(need_ocr) == 1 else 'are scanned images'} and {why}. "
                                          f"Install it with: {install_hint()}  then press Try again. The text that could be read is kept.")
                     return res
-                runner = lambda png, _exe=exe: ocr_png(png, settings, _exe)  # noqa: E731
+                runner = lambda png, _exe=exe: ocr_png(png, settings, _exe)
             for k, i in enumerate(need_ocr, start=1):
                 if cancelled():
                     break

@@ -5,9 +5,9 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from app.db import SCHEMA_V4 as SCHEMA, SCHEMA_VERSION, USAGE_SCHEMA, USAGE_V3_ALTERS, Database, _split_statements   # v4 = the schema before resumes
+from app.db import SCHEMA_V4 as SCHEMA, SCHEMA_VERSION, USAGE_SCHEMA, Database, _split_statements   # v4 = the schema before resumes
 from app.services.usage import UsageRecorder, from_ollama, loaded_models, usage_context
-from conftest import act, add_questions, answer, make_client_for, start_interview, state
+from conftest import act, add_questions, answer, start_interview, state
 
 MODEL = "qwen3.5:4b"
 

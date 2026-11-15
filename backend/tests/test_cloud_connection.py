@@ -1,7 +1,6 @@
 """Settings -> AI models -> Test connection: free by default, rate limited, and honest about missing models."""
 import logging
 
-import pytest
 
 from conftest import CLOUD_KEY, act, add_questions, answer, enable_cloud, start_interview, state
 from fakecloud import ALL_MODELS

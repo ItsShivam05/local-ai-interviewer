@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from . import __version__
 from .config import Settings
 from .deps import Container, build_container
 from .errors import AppError
@@ -39,7 +40,7 @@ def create_app(settings: Optional[Settings] = None, container: Optional[Containe
     settings = settings or Settings.from_env()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)  # request URLs only, but keep logs quiet
-    app = FastAPI(title="Local AI Interviewer", version="1.0.0", docs_url="/api/docs", openapi_url="/api/openapi.json")
+    app = FastAPI(title="Local AI Interviewer", version=__version__, docs_url="/api/docs", openapi_url="/api/openapi.json")
     app.state.c = container or build_container(settings)
 
     @app.middleware("http")
