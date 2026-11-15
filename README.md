@@ -1,24 +1,87 @@
+<div align="center">
+
+<img src="frontend/public/logo.svg" alt="Local AI Interviewer logo" width="88" height="88">
+
 # Local AI Interviewer
 
+**Private mock interviews for tech roles, graded by a local LLM on your own computer.**
+
+[![CI](https://github.com/Yuvakunaal/local-ai-interviewer/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Yuvakunaal/local-ai-interviewer/actions/workflows/ci.yml)
+[![Security](https://github.com/Yuvakunaal/local-ai-interviewer/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/Yuvakunaal/local-ai-interviewer/actions/workflows/security.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776AB.svg)
+![Node 18+](https://img.shields.io/badge/node-18%2B-339933.svg)
+![Runs locally with Ollama](https://img.shields.io/badge/runs%20locally-Ollama-black.svg)
+
+[Quick start](#quick-start) · [Features](#features) · [How it works](#how-it-works) · [Docs](docs/README.md) · [Contributing](CONTRIBUTING.md) · [Roadmap](ROADMAP.md) · [Security](SECURITY.md)
+
+<img src="docs/assets/screenshots/interview-adaptive.png" alt="An adaptive interview asking about a project from the candidate's resume, with topic, level, strategy and time left shown above the question" width="860">
+
+</div>
+
 A personal mock-interview coach for any role in tech (software, data, cloud, security, ML, QA, DevOps and more) that runs **on your own computer** (macOS, Windows or Linux) — by default entirely offline, with an optional switch to Ollama's cloud models for faster, stronger grading.
-You supply the questions; the app asks them aloud (Phonon on Apple Silicon Macs, your computer's own offline voices everywhere else), takes your typed or spoken answer, has an LLM
-(a local Ollama model by default, or Ollama cloud models if you choose) evaluate it, asks a targeted follow-up only when one is worth asking, and finishes with a scored report.
+You supply the questions (or let it build them from your resume); the app asks them aloud (Phonon on Apple Silicon Macs, your computer's own offline voices everywhere else), takes your typed or spoken answer, has an LLM
+(a local Ollama model by default, or Ollama cloud models if you choose) evaluate it, asks a targeted follow-up only when one is worth asking, and finishes with a scored, explained report.
 
-* **Default: no cloud, no API keys, no telemetry.** The server binds to `127.0.0.1` only. Cloud models are strictly opt-in (Settings → AI models, see §7a) and are never used as a silent fallback.
+* **Default: no cloud, no API keys, no telemetry.** The server binds to `127.0.0.1` only. Cloud models are strictly opt-in (Settings → AI models, see [§7a](#7a-ollama-cloud-models-optional)) and are never used as a silent fallback.
 * All questions, answers, evaluations and reports live in a local SQLite file (`data/interviewer.sqlite3`).
-* Built and verified on a MacBook Air M2 / 8 GB RAM / macOS 26 / Chrome 156 / Ollama 0.40.12. See *Supported platforms* below for what is and is not verified elsewhere.
+* Built and verified on a MacBook Air M2 / 8 GB RAM / macOS 26 / Chrome 156 / Ollama 0.40.12. See [Supported platforms](#2-supported-platforms) for what is and is not verified elsewhere.
 
+## Quick start
+
+```bash
+git clone https://github.com/Yuvakunaal/local-ai-interviewer.git
+cd local-ai-interviewer
+./check.sh            # read-only prerequisite report (Windows: check.bat)
+./setup-models.sh     # shows sizes and free disk, asks before downloading the model (Windows: setup-models.bat)
+./start.sh --open     # installs dependencies on first run, builds the UI, starts http://localhost:3000 and opens it (Windows: start.bat always opens it)
 ```
-./start.sh      →      http://localhost:3000        (macOS / Linux)
-start.bat       →      http://localhost:3000        (Windows)
+
+You need Python ≥ 3.10, Node ≥ 18, [Ollama](https://ollama.com/download) and Chrome or Edge. Full instructions: [§4 Install and run](#4-install-and-run).
+**New here? Read [`guide.md`](guide.md)** — a simple step-by-step from setup to your first interview.
+
+## Features
+
+| | |
+|---|---|
+| **Evidence-checked grading** — every answer is scored by the app from validated dimension scores, with a profile per subject (SQL, Python, data engineering, ML, system design, behavioural …). The grader must quote your words; claimed mistakes it cannot quote are shown but never counted. [How grading works](docs/evaluation.md) | <img src="docs/assets/screenshots/report.png" alt="Interview report with score ring, scorecard and topic performance" width="420"> |
+| **Adaptive interviews** — six strategies (progressive, deep-dive, practical, conceptual, mixed, resume-based) choose each next question and difficulty from your answers, with a plain-language reason for every decision and a time limit. [Adaptive behaviour](docs/adaptive-interviews.md) | <img src="docs/assets/screenshots/setup-adaptive.png" alt="Interview setup with the adaptive mode, strategy cards and starting level" width="420"> |
+| **Resume intelligence** — a candidate profile checked line by line against your PDF: skills with evidence-based confidence, areas worth preparing, and offline questions tied to real resume statements. Injection-like text is flagged and never followed. [Resume intelligence](docs/resume-intelligence.md) | <img src="docs/assets/screenshots/candidate-profile.png" alt="Candidate profile with an injection warning, extraction quality and skills with confidence and source lines" width="420"> |
+| **Progress you can see** — dashboard with score trend, weakest topics and one-click practice; reports with skills, difficulty-wise results, progress since your last attempt, a learning plan, PDF/Markdown/JSON and share-safe exports. | <img src="docs/assets/screenshots/dashboard.png" alt="Home dashboard with average score, trend chart and focus areas" width="420"> |
+
+Also: voice questions and spoken answers (offline Whisper), follow-ups with hard limits, pause and resume, one-click database backup, light and dark themes, keyboard shortcuts and a command palette.
+Screenshots are of the real app with fictional data; regenerate them with `node frontend/e2e/screenshots.mjs`.
+
+## How it works
+
+```mermaid
+flowchart LR
+  B[Browser UI<br/>React + TypeScript] -->|JSON over HTTP, 127.0.0.1 only| API[FastAPI backend]
+  API --> SM[Interview state machine]
+  SM --> EV[Evaluator<br/>profiles · grounding · scoring]
+  SM --> AE[Adaptive engine<br/>pure functions]
+  API --> RI[Resume intelligence<br/>offline]
+  RI --> SM
+  EV --> GW[LLM gateway]
+  GW -->|default| OL[(Ollama on this computer<br/>qwen3.5:4b · Phonon)]
+  GW -.->|only after opt-in| CL[(Ollama cloud)]
+  API --> DB[(SQLite<br/>data/interviewer.sqlite3)]
+  API --> W[faster-whisper<br/>optional, in-process]
 ```
 
-**What's new in 2.0** (see [`CHANGELOG.md`](CHANGELOG.md)): evidence-checked, profile-based grading ([docs/evaluation.md](docs/evaluation.md)),
-**adaptive interviews** that choose each next question and difficulty from your answers ([docs/adaptive-interviews.md](docs/adaptive-interviews.md)),
-and a **candidate profile** for every resume with offline, claim-grounded questions ([docs/resume-intelligence.md](docs/resume-intelligence.md)).
-None of them adds a model, a download or a network call; your configured models are unchanged.
+The model writes analysis; **the app** decides scores, limits, follow-ups and every state transition. Details: [architecture](docs/architecture.md),
+[§1 below](#1-architecture-and-data-flow), and the [architecture decision records](docs/adr/).
 
-**New here? Read [`guide.md`](guide.md)** — a simple step-by-step from setup to giving your first interview, plus what to look after.
+**Tech stack:** Python · FastAPI · Pydantic · SQLite · httpx · ReportLab · pypdfium2 (+ optional Tesseract OCR, faster-whisper) — React 19 · TypeScript · Vite · Vitest — Ollama for local models.
+
+## Contents
+
+1. [Architecture and data flow](#1-architecture-and-data-flow) · 2. [Supported platforms](#2-supported-platforms) · 3. [Prerequisites](#3-prerequisites-and-what-needs-the-internet) ·
+4. [Install and run](#4-install-and-run) · 5. [Using it](#5-using-it) · 5a. [Resumes](#5a-resumes--interview-questions-about-your-own-experience) ·
+6. [How evaluation works](#6-how-evaluation-works) · 7. [Models and resource use](#7-models-and-resource-use) · 7a. [Cloud models](#7a-ollama-cloud-models-optional) ·
+8. [Microphone](#8-microphone-optional) · 9. [Troubleshooting](#9-troubleshooting) · 10. [Verify it is local](#10-verify-that-it-is-really-local) ·
+11. [Known limitations](#11-known-limitations) · 12. [Tests](#12-tests) · 13. [Project layout](#13-project-layout) ·
+[Contributing](#contributing) · [Roadmap](#roadmap) · [Security](#security) · [License](#license)
 
 ---
 
@@ -113,7 +176,7 @@ start.bat                                  :: opens http://localhost:3000 for yo
 You can also double-click `start.bat` in File Explorer; the window stays open so you can read the messages.
 Prerequisites on Windows: `winget install OpenJS.NodeJS.LTS`, `winget install Python.Python.3.12` (tick *Add python.exe to PATH*), and Ollama from <https://ollama.com/download/windows>.
 
-**What a first-time user sees.** `./start.sh` opens the app in the browser and the app checks the computer first:
+**What a first-time user sees.** `./start.sh --open` (or `start.bat`, which always opens it) opens the app in the browser — plain `./start.sh` starts it and prints the address — and the app checks the computer first:
 * If **Python** or **Node.js** is missing, nothing can run yet, so the launcher opens a plain local page (`scripts/setup-required.html`, no server, nothing from the internet) with the exact install steps for that system (macOS / Windows / Linux), then you run the start command again.
 * Once the app is up, it opens on a **setup page in the middle of the screen** whenever the local AI is not ready: it lists what is missing (**Ollama** not installed / not running, the **interview model** not downloaded), how to install it with copyable commands, and updates itself the moment you fix it. The model downloads with **one click** (size shown first, nothing starts until you press it) with a progress bar, Cancel and Retry. Voice and microphone are shown as optional extras.
 * From that page you can also choose **Use cloud models instead** (no download) or **Continue anyway**. With everything installed the page never appears; *Settings → Local services → Setup check* opens it again any time.
@@ -143,7 +206,7 @@ questions in the interview setup. All of it is computed from your local reports 
 | Score ring and verdict at the top of every report | Reports page |
 
 
-The interface is a faithful implementation of `Personal AI Interviewer UX Storyboard.png` (light lavender/indigo theme, Inter font bundled locally — no CDN):
+The interface follows the project's original UX storyboard (a design file, not included in the repository): light lavender/indigo theme, Inter font bundled locally — no CDN:
 
 | Storyboard panel | Where |
 |---|---|
@@ -401,6 +464,17 @@ outbound call goes to the Ollama loopback host and that the source contains exac
 
 ## 12. Tests
 
+The same checks CI runs (see [docs/development.md](docs/development.md) for setup and details):
+
+```bash
+backend/.venv/bin/ruff check .                               # Python lint (bug-finding rules, ruff.toml); install backend/requirements-dev.txt first
+python3 scripts/check_docs.py                                # every Markdown link, image and #anchor
+backend/.venv/bin/python -m pytest backend --cov=backend/app # backend tests + line coverage (94% when measured on 2026-11-15)
+cd frontend && npm run lint && npm run typecheck && npm test && npm run build
+```
+
+More, including the real-browser and real-model suites:
+
 ```bash
 backend/.venv/bin/python -m pytest backend                  # unit/API/launcher tests with a mocked Ollama (httpx.MockTransport); Windows: backend\\.venv\\Scripts\\python -m pytest backend
 RUN_INTEGRATION=1 backend/.venv/bin/python -m pytest -m integration -s backend/tests/integration   # real qwen3.5:4b + Phonon
@@ -419,6 +493,7 @@ cd frontend && node e2e/active-interview.mjs               # one interview at a 
 cd frontend && node e2e/loaders.mjs                        # loaders (skeletons, progress bar, busy buttons), page-file recovery, no repeated requests between pages
 cd frontend && node e2e/cloud.mjs                          # Ollama cloud mode against a FAKE cloud server (no network, no credits; makes ~8 fake calls): consent, key, test, graded interview, cost tracker, budget stop, fallback, switch back
 cd frontend && node e2e/resumes.mjs                         # Resumes with a FAKE local model: upload, progress, edit/save, preview, duplicates, Resume-only and Both interviews, Resume claims, phone width, dark theme, keyboard
+cd frontend && node e2e/screenshots.mjs                      # regenerate docs/assets screenshots + social preview (fictional data)
 cd frontend && node e2e/qa-sweep.mjs                        # every page, tab and dialog in light/dark/phone/tablet: unnamed buttons or fields, dead links, duplicate ids, headings, overflow (self-tested: it injects mistakes and must catch them)
 ```
 
@@ -426,7 +501,7 @@ New in 2.0: `test_eval_profiles.py`, `test_grounding.py`, `test_adaptive_engine.
 `test_intelligence_flow.py`, `test_candidate_profile.py` (API workflows: lifecycle, restart recovery, duplicates, failed model calls,
 time limits, v5→v6 migration, redaction across PDF/MD/JSON, backup, resume traceability, prompt injection, cloud consent).
 
-`.github/workflows/ci.yml` runs the backend and frontend tests on macOS, Windows and Linux for every push and pull request.
+`.github/workflows/ci.yml` runs lint, docs checks, backend tests (macOS, Windows, Linux; Python 3.12, plus 3.10 on Linux) and frontend checks for every pull request and push to `main`; `.github/workflows/security.yml` runs dependency and CodeQL scans. Neither needs a model, a microphone or a cloud account.
 
 The e2e scripts start their own backend on port 3100 with a throw-away data directory — your interviews are never touched.
 
@@ -445,6 +520,21 @@ frontend/e2e/            real-Chrome end-to-end scripts
 docs/                    evaluation · adaptive interviews · resume intelligence · adr/ (architecture decisions)
 data/                    SQLite DB, resume PDFs (data/resumes), OCR temp files (data/tmp), audio cache, backups (git-ignored)
 ```
+
+## Contributing
+
+Contributions are welcome — bug reports, docs, tests and code. Start with [CONTRIBUTING.md](CONTRIBUTING.md) and the
+[developer guide](docs/development.md); issues labelled `good first issue` are a good entry point. Please follow the
+[Code of Conduct](CODE_OF_CONDUCT.md). Questions: [SUPPORT.md](SUPPORT.md).
+
+## Roadmap
+
+What is planned and where help is welcome: [ROADMAP.md](ROADMAP.md). Changes per version: [CHANGELOG.md](CHANGELOG.md).
+
+## Security
+
+Please report vulnerabilities privately as described in [SECURITY.md](SECURITY.md), never in a public issue.
+The security model (loopback-only server, untrusted-input handling, cloud opt-in, data on disk) is summarised there too.
 
 ## License
 
