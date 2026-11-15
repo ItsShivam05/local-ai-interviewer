@@ -6,6 +6,7 @@ Usage: python scripts/check_docs.py            exit code 1 and a list of problem
 """
 from __future__ import annotations
 
+import os
 import re
 import sys
 from pathlib import Path
@@ -104,7 +105,8 @@ def check() -> list[str]:
             if re.match(r"^[a-z][a-z0-9+.-]*:", target, re.I) or target.startswith("//"):
                 continue                               # external URL, mailto: ... (not fetched)
             ref, _, frag = target.partition("#")
-            dest = md if not ref else (md.parent / unquote(ref)).resolve()
+            # normpath collapses ".." WITHOUT touching letter case (resolve() rewrites case to the on-disk name on Windows)
+            dest = md if not ref else Path(os.path.normpath(md.parent / unquote(ref)))
             where = f"{md.relative_to(ROOT)}:{n}"
             if ref and not dest.exists():
                 problems.append(f"{where}: missing file {ref}")
