@@ -153,6 +153,46 @@ class ResumeService:
             r = self._row(c, rid)
         return {"id": rid, "raw_text": r["raw_text"] or "", "extraction_method": r["extraction_method"], "pages": r["pages"]}
 
+    def intelligence(self, rid: int) -> dict[str, Any]:
+        """The candidate profile (skills with confidence and sources, projects, clarification areas, claim-grounded questions) plus how
+        this resume's claims went in past interviews. Deterministic and local: no model call, nothing leaves the computer."""
+        from . import candidate_profile
+        with self.db.read() as c:
+            r = self._row(c, rid)
+            reports = c.execute("""SELECT r.interview_id, r.data_json, i.title, i.completed_at FROM reports r JOIN interviews i ON i.id=r.interview_id
+                                   WHERE r.data_json LIKE '%"resume_claims"%' ORDER BY r.interview_id""").fetchall()
+        prof = self._profile(r["profile_json"])
+        if r["status"] != "ready" or prof is None:
+            raise AppError(409, "resume_not_ready", "This resume has not been organised yet. Wait for reading to finish (or fix the error) first.")
+        out = candidate_profile.build(rid, r["name"], prof, r["raw_text"] or "")
+        history: dict[str, dict[str, Any]] = {}
+        for rep in reports:
+            try:
+                data = json.loads(rep["data_json"])
+            except ValueError:
+                continue
+            for cl in data.get("resume_claims") or []:
+                if cl.get("resume_id") != rid:
+                    continue
+                h = history.setdefault(cl.get("label") or "", {"label": cl.get("label") or "", "section": cl.get("section") or "", "attempts": []})
+                h["attempts"].append({"interview_id": rep["interview_id"], "title": rep["title"], "date": rep["completed_at"],
+                                      "average_score": cl.get("average_score"), "verdict": cl.get("verdict"), "tip": cl.get("tip")})
+        out["practice_history"] = sorted(history.values(), key=lambda h: (h["attempts"][-1]["average_score"] or 0))
+        discussed = {h["label"] for h in history.values()}
+        out["unexplored"] = [ci for ci in out["claim_inventory"] if not any(ci["label"] == d or d.startswith(ci["label"]) for d in discussed)]
+        return out
+
+    def auto_questions(self, rid: int, count: int, exclude: Optional[list[str]] = None) -> list[dict[str, Any]]:
+        """Claim-grounded questions for an interview, built offline from the candidate profile (see candidate_profile.py)."""
+        from . import candidate_profile
+        with self.db.read() as c:
+            r = self._row(c, rid)
+        prof = self._profile(r["profile_json"])
+        if r["status"] != "ready" or prof is None:
+            raise AppError(409, "resume_not_ready", "This resume has not been organised yet, so no questions can be built from it.")
+        data = candidate_profile.build(rid, r["name"], prof, r["raw_text"] or "", question_limit=count)
+        return data["suggested_questions"][:count]
+
     def file_path(self, rid: int) -> tuple[Path, str]:
         with self.db.read() as c:
             r = self._row(c, rid)

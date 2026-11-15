@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 USAGE_SCHEMA = """
 CREATE TABLE llm_usage (
@@ -69,6 +69,46 @@ ALTER TABLE interview_items ADD COLUMN source TEXT NOT NULL DEFAULT 'bank';
 ALTER TABLE interview_items ADD COLUMN resume_id INTEGER;
 ALTER TABLE interview_items ADD COLUMN resume_name TEXT;
 ALTER TABLE interview_items ADD COLUMN claim_json TEXT;
+"""
+
+# v6: Interview Intelligence 2.0 + the adaptive engine. Additive only: new nullable/defaulted columns and two new tables.
+V6_SCRIPT = """
+ALTER TABLE interviews ADD COLUMN plan_json TEXT;
+ALTER TABLE interviews ADD COLUMN adaptive_json TEXT;
+ALTER TABLE interviews ADD COLUMN paused_seconds INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE interviews ADD COLUMN end_reason TEXT;
+CREATE TABLE interview_pool (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    interview_id INTEGER NOT NULL REFERENCES interviews(id) ON DELETE CASCADE,
+    ord INTEGER NOT NULL,                      -- original order (the engine's tie-break)
+    question_id INTEGER,
+    text TEXT NOT NULL,
+    rubric TEXT,
+    topic TEXT,
+    difficulty TEXT,
+    source TEXT NOT NULL DEFAULT 'bank',
+    resume_id INTEGER,
+    resume_name TEXT,
+    claim_json TEXT,
+    status TEXT NOT NULL DEFAULT 'available',  -- available | used
+    item_id INTEGER,                           -- the interview item it became when the engine chose it
+    UNIQUE (interview_id, ord)
+);
+CREATE INDEX idx_pool_interview ON interview_pool(interview_id, status);
+CREATE TABLE adaptive_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    interview_id INTEGER NOT NULL REFERENCES interviews(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,                        -- select | followup | end
+    decision TEXT NOT NULL,                    -- start | switch_topic | revisit_weak | deepen | probe_gap | end_time ...
+    reason TEXT NOT NULL,
+    item_id INTEGER,
+    turn_id INTEGER,
+    level_before TEXT,
+    level_after TEXT,
+    topic TEXT,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX idx_events_interview ON adaptive_events(interview_id);
 """
 
 SCHEMA = """
@@ -198,7 +238,7 @@ class Database:
         with self.tx() as conn:
             version = conn.execute("PRAGMA user_version").fetchone()[0]
             if version == 0:
-                for stmt in _split_statements(SCHEMA):
+                for stmt in _split_statements(SCHEMA + V6_SCRIPT):
                     conn.execute(stmt)
                 conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
             elif version > SCHEMA_VERSION:
@@ -216,6 +256,9 @@ class Database:
                             conn.execute(stmt)
                 if version <= 4:             # v4 -> v5: resumes, and where each interview question came from
                     for stmt in _split_statements(RESUME_SCHEMA + ITEMS_V5_ALTERS):
+                        conn.execute(stmt)
+                if version <= 5:             # v5 -> v6: adaptive interviews (pool, decisions, plan, time accounting)
+                    for stmt in _split_statements(V6_SCRIPT):
                         conn.execute(stmt)
                 conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
 

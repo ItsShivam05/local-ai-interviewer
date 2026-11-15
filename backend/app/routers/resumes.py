@@ -110,6 +110,13 @@ def get_resume(rid: int, request: Request) -> dict[str, Any]:
     return svc(request).get(rid)
 
 
+@router.get("/{rid}/intelligence")
+def intelligence(rid: int, request: Request) -> dict[str, Any]:
+    """Candidate profile: skill inventory with confidence and source references, projects, technology relationships,
+    clarification areas, injection warnings, claim-grounded questions and practice history. Computed locally."""
+    return svc(request).intelligence(rid)
+
+
 @router.patch("/{rid}")
 def patch_resume(rid: int, body: ResumePatchIn, request: Request) -> dict[str, Any]:
     return svc(request).patch(rid, body)

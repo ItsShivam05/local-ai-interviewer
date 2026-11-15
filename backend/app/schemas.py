@@ -129,6 +129,18 @@ class InterviewConfig(BaseModel):
     mic_enabled: bool = False
     include_bank: bool = True          # False: only the reviewed resume questions are asked
     mix: Literal["bank_first", "resume_first", "interleave", "shuffled"] = "bank_first"   # how bank and resume questions are ordered
+    # ---- adaptive interviews (v6). "fixed" keeps the exact v1-v5 behaviour: the selected questions are asked in order.
+    mode: Literal["fixed", "adaptive"] = "fixed"
+    strategy: Literal["progressive", "deep_dive", "practical", "conceptual", "mixed", "resume"] = "progressive"
+    start_level: Literal["beginner", "intermediate", "advanced", "expert"] = "intermediate"
+    max_questions: int = Field(default=8, ge=1, le=60)        # adaptive: most questions asked from the pool
+    time_limit_minutes: Optional[int] = Field(default=None, ge=5, le=240)   # both modes: no new question starts after this
+    focus_topic: Optional[str] = Field(default=None, max_length=80)          # deep-dive: the topic to explore (default: the largest)
+
+    @field_validator("focus_topic", mode="before")
+    @classmethod
+    def _focus(cls, v: Any) -> Optional[str]:
+        return _clean(v)
 
     @field_validator("title", mode="before")
     @classmethod
@@ -137,6 +149,7 @@ class InterviewConfig(BaseModel):
 
 
 MAX_INTERVIEW_QUESTIONS = 60
+MAX_POOL_QUESTIONS = 200          # adaptive interviews choose from at most this many
 
 
 class ClaimIn(BaseModel):
@@ -179,10 +192,18 @@ class ResumeQuestionIn(BaseModel):
         return v.lower() if v else None
 
 
+class ResumeAutoIn(BaseModel):
+    """Add claim-grounded questions built offline from a resume's candidate profile (no model call). See candidate_profile.py."""
+
+    resume_id: int
+    count: int = Field(default=6, ge=1, le=20)
+
+
 class CreateInterviewIn(BaseModel):
     set_id: Optional[int] = None                       # None: no question-bank questions (a resume-only interview)
     config: InterviewConfig
     resume_questions: list[ResumeQuestionIn] = Field(default_factory=list, max_length=MAX_INTERVIEW_QUESTIONS)
+    resume_auto: Optional[ResumeAutoIn] = None
 
 
 class AnswerIn(BaseModel):
@@ -246,11 +267,38 @@ class DimensionScores(BaseModel):
     practical_application: int
     clarity: int
     production_awareness: int = 0
+    # requested only by the evaluation profiles that need them (see services/eval_profiles.py); None = not scored, excluded from weighting
+    conceptual_understanding: Optional[int] = None
+    problem_solving: Optional[int] = None
+    edge_cases: Optional[int] = None
+    tradeoffs: Optional[int] = None
 
     @field_validator("*", mode="before")
     @classmethod
-    def _clamp(cls, v: Any) -> int:
+    def _clamp(cls, v: Any, info) -> Optional[int]:
+        if v is None and info.field_name in ("conceptual_understanding", "problem_solving", "edge_cases", "tradeoffs"):
+            return None
         return _score(v)
+
+
+class EvidenceItem(BaseModel):
+    """One piece of evidence the grader cites from the answer. `verified` is set by the app (the quote really is in the answer)."""
+
+    kind: Literal["correct", "incorrect", "unclear"] = "correct"
+    point: str = ""
+    quote: str = ""
+    verified: bool = False
+
+    @field_validator("kind", mode="before")
+    @classmethod
+    def _kind(cls, v: Any) -> str:
+        v = str(v or "").strip().lower()
+        return v if v in {"correct", "incorrect", "unclear"} else "correct"
+
+    @field_validator("point", "quote", mode="before")
+    @classmethod
+    def _txt(cls, v: Any) -> str:
+        return (str(v).strip() if v is not None else "")[:400]
 
 
 class LLMEvaluation(BaseModel):
@@ -271,6 +319,15 @@ class LLMEvaluation(BaseModel):
     needs_followup: bool = False
     followup_question: str = ""
     followup_reason: str = ""
+    evidence: list[EvidenceItem] = []           # quotes from the answer backing the correct points and misconceptions
+    deeper_question: str = ""                   # a harder follow-up building on a strong answer (used by the adaptive engine only)
+
+    @field_validator("evidence", mode="before")
+    @classmethod
+    def _evidence(cls, v: Any) -> list:
+        if not isinstance(v, list):
+            return []
+        return [x for x in v if isinstance(x, dict)][:8]
 
     @field_validator("question_level", mode="before")
     @classmethod
@@ -283,7 +340,7 @@ class LLMEvaluation(BaseModel):
     def _lists(cls, v: Any) -> list[str]:
         return _str_list(v)
 
-    @field_validator("ideal_answer", "uncertainty_note", "followup_question", "followup_reason", "verdict_summary", mode="before")
+    @field_validator("ideal_answer", "uncertainty_note", "followup_question", "followup_reason", "verdict_summary", "deeper_question", mode="before")
     @classmethod
     def _strs(cls, v: Any) -> str:
         return (str(v).strip() if v is not None else "")[:1500]
@@ -310,6 +367,16 @@ class Evaluation(LLMEvaluation):
     interpreted_answer: Optional[str] = None   # voice answers: the transcript after speech-recognition repair (what was graded)
     followup_asked: bool = False
     followup_suppressed_reason: Optional[str] = None
+    # Interview Intelligence 2.0 (all optional: evaluations stored before v6 simply lack them)
+    profile: Optional[str] = None                       # evaluation profile key (sql, python, behavioral, ...)
+    profile_label: Optional[str] = None
+    weights: dict[str, float] = {}                      # normalised weights actually applied to reach `score`
+    classification: Optional[str] = None                # correct | correct_incomplete | partially_correct | incorrect | no_attempt | uncertain
+    unverified_misconceptions: list[str] = []           # claimed errors the grader could not tie to the answer: shown, never counted as errors
+    consistency_flags: list[dict[str, str]] = []        # {code, message}: contradictions found and what the app did about them
+    adjustments: list[str] = []                         # deterministic corrections applied to the model's scores, in plain words
+    followup_kind: Optional[str] = None                 # probe_gap | clarify | deepen | scenario (adaptive interviews)
+    provenance: dict[str, Any] = {}                     # prompt/rubric/profile versions, model route, temperature, input hash
 
 
 # ---------------------------------------------------------------- resumes

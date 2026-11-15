@@ -454,7 +454,7 @@ def test_local_mode_resume_traffic_only_goes_to_loopback(client, fake):
 def test_fresh_install_has_resumes_and_item_source_columns(tmp_path):
     db = Database(tmp_path / "fresh.sqlite3")
     with db.read() as c:
-        assert c.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION == 5
+        assert c.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION == 6
         cols = {r[1] for r in c.execute("PRAGMA table_info(interview_items)")}
         assert {"source", "resume_id", "resume_name", "claim_json"} <= cols
         assert c.execute("SELECT COUNT(*) FROM resumes").fetchone()[0] == 0
@@ -475,7 +475,7 @@ def test_a_populated_v4_database_upgrades_in_place(tmp_path):
     raw.close()
     db = Database(path)
     with db.read() as c:
-        assert c.execute("PRAGMA user_version").fetchone()[0] == 5
+        assert c.execute("PRAGMA user_version").fetchone()[0] == 6
         item = c.execute("SELECT * FROM interview_items").fetchone()
         assert item["text"] == "Old question?" and item["source"] == "bank" and item["resume_id"] is None
         assert c.execute("SELECT COUNT(*) FROM llm_usage").fetchone()[0] == 1

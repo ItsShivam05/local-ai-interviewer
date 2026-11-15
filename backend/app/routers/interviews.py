@@ -23,7 +23,7 @@ def list_interviews(request: Request):
 
 @router.post("", status_code=201)
 def create(body: CreateInterviewIn, request: Request):
-    return svc(request).create(body.set_id, body.config, body.resume_questions)
+    return svc(request).create(body.set_id, body.config, body.resume_questions, body.resume_auto)
 
 
 @router.delete("", status_code=200)

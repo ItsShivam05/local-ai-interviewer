@@ -399,7 +399,9 @@ def render_markdown(r: dict[str, Any]) -> str:
             if ev:
                 out += [f"**Score:** {t['score']}/10", ""]
                 for title, key in (("Correct points", "correct_points"), ("Missing", "missing_concepts"),
-                                   ("Misconceptions", "misconceptions"), ("Suggested improvements", "suggested_improvements")):
+                                   ("Misconceptions", "misconceptions"),
+                                   ("Possible errors (not found in the answer; not counted)", "unverified_misconceptions"),
+                                   ("Suggested improvements", "suggested_improvements")):
                     if ev.get(key):
                         out += [f"**{title}:**", _bullets(ev[key]), ""]
                 if ev.get("ideal_answer"):

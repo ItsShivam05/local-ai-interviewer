@@ -69,6 +69,8 @@ def build_container(settings: Settings, *, ollama: Optional[OllamaClient] = None
     # so an interview evaluation waits at most for one small resume request, never for a whole resume
     resumes = ResumeService(db, settings, evaluator, questions, executor=executor, release=interviews._release_model_if_idle, is_cloud=gateway.is_cloud)
     interviews.busy_checks.append(resumes.is_working)       # the model is not unloaded while a resume is being organised
+    interviews.auto_questions = lambda rid, n, taken: resumes.auto_questions(rid, n, taken)
+    interviews.claim_inventory = lambda rid: resumes.intelligence(rid)["claim_inventory"]
     return Container(
         settings=settings, db=db, ollama=ollama, questions=questions, speech=SpeechService(settings, ollama),
         stt=TranscriptionService(settings), evaluator=evaluator,

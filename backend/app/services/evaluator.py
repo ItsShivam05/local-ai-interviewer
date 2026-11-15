@@ -1,6 +1,7 @@
 """Answer evaluation: LLM call -> validation -> deterministic scoring and follow-up policy."""
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -10,8 +11,9 @@ from typing import Any, Optional
 from pydantic import BaseModel, ValidationError
 
 from ..schemas import DimensionScores, Evaluation, LLMEvaluation, RubricSettings, _str_list
+from . import eval_profiles, grounding
 from .ollama import LLMError, OllamaClient
-from .prompts import (EVAL_SCHEMA, INTERPRET_SCHEMA, INTERPRET_SYSTEM, NARRATIVE_SCHEMA, NARRATIVE_SYSTEM, eval_system_prompt, eval_user_prompt,
+from .prompts import (PROMPT_VERSION, eval_schema_for, EVAL_SCHEMA, INTERPRET_SCHEMA, INTERPRET_SYSTEM, NARRATIVE_SCHEMA, NARRATIVE_SYSTEM, eval_system_prompt, eval_user_prompt,
                       interpret_user_prompt, FOLLOWUP_SCHEMA, FOLLOWUP_SYSTEM, followup_user_prompt,
                       repair_prompt, RESUME_SAFETY)
 
@@ -143,6 +145,7 @@ class EvalContext:
     followups_remaining: int = 0
     answer_source: str = "typed"      # "voice": the text came from speech recognition and may contain misheard words
     claim: Optional[dict[str, Any]] = None   # resume questions only: {section, label, excerpt} of the claim being defended (untrusted)
+    profile_key: str = "general"            # evaluation profile (eval_profiles.detect_category); decides extra dimensions and weights
 
 
 class Narrative(BaseModel):
@@ -175,6 +178,7 @@ def _extract_json(raw: str) -> Any:
 class Evaluator:
     def __init__(self, ollama: OllamaClient):
         self.ollama = ollama
+        self.last_input_hash: Optional[str] = None
 
     def _call_validated(self, messages: list[dict[str, str]], schema: dict[str, Any], model_cls, max_tokens=None, purpose: str = "chat"):
         raw = self.ollama.chat_json(messages, schema, max_tokens=max_tokens, purpose=purpose)
@@ -210,16 +214,24 @@ class Evaluator:
         return drop_unclear(text, unclear)
 
     def evaluate(self, ctx: EvalContext, rubric: RubricSettings) -> LLMEvaluation:
+        profile = eval_profiles.get_profile(ctx.profile_key)
         messages = [
-            {"role": "system", "content": eval_system_prompt(ctx.interview_type, ctx.strictness, rubric, resume=bool(ctx.claim))},
+            {"role": "system", "content": eval_system_prompt(ctx.interview_type, ctx.strictness, rubric, resume=bool(ctx.claim),
+                                                             profile_block=eval_profiles.profile_prompt_block(profile))},
             {"role": "user", "content": eval_user_prompt(
                 question=ctx.question, rubric=ctx.rubric, topic=ctx.topic, difficulty=ctx.difficulty,
                 thread=ctx.thread, current_question=ctx.current_question, current_kind=ctx.current_kind,
                 answer=ctx.answer, followups_remaining=ctx.followups_remaining, answer_source=ctx.answer_source, claim=ctx.claim)},
         ]
-        raw = self._call_validated(messages, EVAL_SCHEMA, LLMEvaluation, purpose="evaluation")
+        raw = self._call_validated(messages, eval_schema_for(profile.extra_dimensions), LLMEvaluation, purpose="evaluation")
         raw.graded_by = self._route()                    # the app records which engine and model graded this; the model's own claim is ignored
+        # reproducibility: the exact input that produced this grade can be identified later (the hash, never the text, is stored)
+        self.last_input_hash = hashlib.sha256(json.dumps(messages, sort_keys=True).encode()).hexdigest()[:16]
         return raw
+
+    def generation_settings(self) -> dict[str, Any]:
+        settings = getattr(getattr(self.ollama, "local", self.ollama), "settings", None) or getattr(self.ollama, "settings", None)
+        return {"temperature": getattr(settings, "llm_temperature", None)}
 
     def _route(self) -> Optional[dict[str, Any]]:
         getter = getattr(self.ollama, "last_route", None)
@@ -244,17 +256,47 @@ class Evaluator:
         return text
 
     def finalize(self, raw: LLMEvaluation, rubric: RubricSettings, decision: FollowUpDecision,
-                 difficulty: Optional[str] = None, interpreted_answer: Optional[str] = None) -> Evaluation:
+                 difficulty: Optional[str] = None, interpreted_answer: Optional[str] = None, *,
+                 answer: Optional[str] = None, profile_key: str = "general", input_hash: Optional[str] = None,
+                 followup_kind: Optional[str] = None) -> Evaluation:
+        """Validated model analysis -> grounded, deterministically scored evaluation. The model never supplies the total."""
+        g = self.assess(raw, answer=answer, interpreted_answer=interpreted_answer)
         level = question_level(raw.question_level, difficulty)
-        score = compute_score(raw.dimension_scores, raw.production_relevant, rubric, level)
+        profile = eval_profiles.get_profile(profile_key)
+        result = eval_profiles.score_answer(g.dimension_scores, profile, rubric, level, raw.production_relevant)
         data = raw.model_dump()
+        data["dimension_scores"] = g.dimension_scores.model_dump()
+        data["misconceptions"] = g.grounded_misconceptions if answer is not None else raw.misconceptions
+        data["evidence"] = [e.model_dump() for e in g.evidence]
+        data["confidence"] = g.confidence
         data["question_level"] = level
         data["interpreted_answer"] = interpreted_answer
         data["followup_question"] = decision.question if decision.ask else ""
         data["needs_followup"] = decision.ask
         data["followup_reason"] = decision.reason or raw.followup_reason
-        return Evaluation(**data, score=score, verdict=verdict_for(score), followup_asked=decision.ask,
-                          followup_suppressed_reason=decision.suppressed_reason)
+        flags = list(g.flags)
+        if result.missing_dimensions:
+            flags.append({"code": "dimension_not_scored", "message": "Not scored by the grader and left out of the weighting: " + ", ".join(result.missing_dimensions) + "."})
+        provenance = {"prompt_version": PROMPT_VERSION, "profiles_version": eval_profiles.PROFILES_VERSION,
+                      "rubric": eval_profiles.rubric_fingerprint(profile, rubric), "level": level,
+                      "graded_by": raw.graded_by, "input_hash": input_hash, **self.generation_settings()}
+        return Evaluation(**data, score=result.score, verdict=verdict_for(result.score), followup_asked=decision.ask,
+                          followup_suppressed_reason=decision.suppressed_reason, profile=profile.key, profile_label=profile.label,
+                          weights=result.weights, classification=g.classification,
+                          unverified_misconceptions=g.unverified_misconceptions if answer is not None else [],
+                          consistency_flags=flags, adjustments=g.adjustments, followup_kind=followup_kind if decision.ask else None,
+                          provenance=provenance)
+
+    @staticmethod
+    def assess(raw: LLMEvaluation, *, answer: Optional[str], interpreted_answer: Optional[str] = None) -> grounding.Grounding:
+        """Grounding + consistency checks. Without the answer text (legacy callers) the model's analysis is taken as given."""
+        if answer is None:
+            return grounding.Grounding(evidence=list(raw.evidence), grounded_misconceptions=list(raw.misconceptions), unverified_misconceptions=[],
+                                       dimension_scores=raw.dimension_scores.model_copy(), confidence=raw.confidence,
+                                       classification=grounding.classify(dims=raw.dimension_scores, grounded_misconceptions=raw.misconceptions,
+                                                                         correct_points=raw.correct_points, confidence=raw.confidence, non_attempt=False))
+        answers = [a for a in (answer, interpreted_answer) if a]
+        return grounding.ground(raw, answers=answers, non_attempt=is_non_attempt(answer))
 
     def narrative(self, digest: str) -> Narrative:
         messages = [{"role": "system", "content": NARRATIVE_SYSTEM},
