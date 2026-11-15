@@ -38,7 +38,8 @@ topic and its text:
 | Behavioural | — (core dimensions re-defined) | relevance/credibility, STAR completeness, reflection, concreteness, structure |
 
 Detection order: an HR interview → behavioural; an explicit topic alias (e.g. topic "SQL") → that profile; keyword rules on the topic,
-then on the question text; otherwise *general*. In a technical interview, behavioural keywords in the question text are ignored.
+then on the question text — every rule is scored by its number of distinct keyword hits and the best wins only when unambiguous (a tie
+falls back to *general*, since a wrong profile is worse than a neutral one); otherwise *general*. In a technical interview, behavioural keywords in the question text are ignored.
 
 The five core dimensions are always scored. Extra dimensions are requested only by the profiles above. If the model omits a requested
 dimension it is **left out of the weighting** (and flagged), never treated as zero. `GET /api/evaluation/profiles` lists every profile
@@ -54,10 +55,12 @@ Weights are re-normalised over the dimensions actually scored, and the normalise
 
 - **Basic** questions (definitions; or difficulty *easy*): depth, practical application, edge cases and trade-offs count at 35 %
   (the v1 rule for depth and practical application, extended to the new dimensions).
-- **Advanced** questions (difficulty *hard*, or the model's classification when you set none): depth, edge cases, trade-offs and
-  production awareness count 125 %.
+- **Advanced** questions (difficulty *hard*, or the model's classification when you set none): in the category profiles, depth, edge
+  cases, trade-offs and production awareness count 125 %. The general profile has no advanced adjustment.
 
-The general profile reproduces v1 scores exactly for basic and standard questions (tested in `test_eval_profiles.py`).
+The general profile reproduces v1 scores exactly at every level (tested in `test_eval_profiles.py`). **Questions that fall into a
+category profile (SQL, Python, …) are scored with that profile's weights, so their scores can differ from v1** — this applies to fixed
+and adaptive interviews alike, and the profile used is shown with every answer.
 
 ## 2. Evidence and grounding
 
@@ -67,14 +70,14 @@ The grader must back its analysis with **short verbatim quotes** from the answer
   must match fragment by fragment, in order; 1-word quotes prove nothing). For voice answers both the raw transcript and the repaired
   text are searched.
 - A misconception counts as an **error** only if it is grounded: a verified "incorrect" quote supports it, or text it quotes is in the
-  answer. Ungrounded ones are kept and shown as *"possible errors — not found in your answer, not counted"*. They never make an answer
+  answer (content words, boilerplate such as "the candidate said" ignored). Ungrounded ones are kept and shown as *"possible errors — not found in your answer, not counted"*. They never make an answer
   "incorrect".
 
 ## 3. Consistency rules (deterministic)
 
 | Situation | What the app does |
 |---|---|
-| "I don't know"-style answer scored above 2 | caps every dimension at 2; classified *no attempt*; no follow-up |
+| short "I don't know"-style answer that the grader also found nothing of value in (no correct points, or correctness ≤ 4), scored above 2 | caps every dimension at 2; classified *no attempt*; no follow-up. A short real answer that merely contains "don't know" is not capped |
 | Correctness ≤ 3 but ≥ 2 correct points, **no** claimed error of any kind, grader not unsure | raises correctness to 5 and says why: an incomplete answer is scored under completeness, not correctness |
 | Correctness ≥ 8 with a verified error | confidence lowered to medium, flagged |
 | Correctness ≥ 7 with nothing correct cited | confidence lowered to medium, flagged |

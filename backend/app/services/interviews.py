@@ -24,6 +24,7 @@ from typing import Any, Callable, Optional
 
 from ..db import Database, utcnow
 from ..errors import AppError, bad_request, conflict, not_found
+from ..parsing import normalize_for_dedupe
 from ..schemas import (MAX_ANSWER_CHARS, MAX_INTERVIEW_QUESTIONS, MAX_POOL_QUESTIONS, AnswerIn, ClaimIn, InterviewConfig, LLMEvaluation,
                        ResumeAutoIn, ResumeQuestionIn)
 from . import adaptive, eval_profiles, reports
@@ -95,6 +96,18 @@ class InterviewService:
                          "resume_id": rq.resume_id, "resume_name": rq.resume_name, "claim_json": rq.claim.model_dump_json() if rq.claim else None}
                         for rq in (resume_questions or [])]
         items = mix_items(bank, resume_items, config.mix)
+        # a resume question that repeats a bank question or another resume question (e.g. reviewed + offline) is asked once;
+        # bank questions are never dropped (fixed-mode behaviour is unchanged)
+        seen = {normalize_for_dedupe(b["text"]) for b in bank}
+        unique: list[dict[str, Any]] = []
+        for it in items:
+            if it["source"] == "resume":
+                key = normalize_for_dedupe(it["text"])
+                if key in seen:
+                    continue
+                seen.add(key)
+            unique.append(it)
+        items = unique
         if not items:
             raise bad_request("no_questions", "Add or select at least one question before starting an interview.")
         adaptive_mode = config.mode == "adaptive"

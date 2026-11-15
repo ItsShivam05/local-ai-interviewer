@@ -22,8 +22,10 @@ class Tech:
     questions: tuple[Q, ...]
 
 
-def _t(name: str, category: str, aliases: str, *questions: Q) -> Tech:
-    return Tech(name, category, re.compile(rf"(?<![a-z0-9])({aliases})(?![a-z0-9])", re.I), questions)
+def _t(name: str, category: str, aliases: str, *questions: Q, case_sensitive: bool = False) -> Tech:
+    """Ambiguous names (React, Node) are matched case-sensitively so "React to customer escalations" is not React."""
+    flags = 0 if case_sensitive else re.I
+    return Tech(name, category, re.compile(rf"(?<![A-Za-z0-9])({aliases})(?![A-Za-z0-9])", flags), questions)
 
 
 TECHS: list[Tech] = [
@@ -78,7 +80,7 @@ TECHS: list[Tech] = [
     _t("Terraform", "Infrastructure as code", r"terraform",
        ("How did you manage Terraform state and review infrastructure changes safely in {ctx}?", "medium", "deployment",
         "Remote state with locking, plan reviews, modules, environments, drift.")),
-    _t("AWS", "Cloud", r"aws|amazon web services|ec2|s3|lambda|dynamodb|cloudwatch",
+    _t("AWS", "Cloud", r"aws|amazon web services|ec2|s3|aws lambda|dynamodb|cloudwatch",
        ("Which AWS services did {ctx} rely on, and how did you handle permissions (IAM) and cost?", "medium", "security",
         "Least-privilege IAM roles, secrets handling, cost monitoring, service choices and why.")),
     _t("Google Cloud", "Cloud", r"gcp|google cloud|bigquery|cloud run|pub/?sub",
@@ -87,18 +89,18 @@ TECHS: list[Tech] = [
     _t("Azure", "Cloud", r"azure",
        ("Which Azure services did {ctx} depend on, and how did you monitor and secure them?", "medium", "security",
         "Managed identities, Key Vault, monitoring/alerting, network rules.")),
-    _t("React", "Frontend", r"react(?:\.js|js)?",
+    _t("React", "Frontend", r"React(?:\.js|JS)|React(?!\s+(?:to|quickly|promptly|swiftly|calmly|immediately)\b)|react\.js|reactjs",
        ("How was state managed in the React application in {ctx}, and how did you avoid unnecessary re-renders?", "medium", "architecture",
         "Local vs global state, memoisation, data fetching/caching, profiling."),
        ("How did you test the React components in {ctx}?", "medium", "testing",
-        "Component tests, user-event style tests, mocking APIs, end-to-end coverage.")),
-    _t("Node.js", "Backend", r"node(?:\.js|js)?|express",
+        "Component tests, user-event style tests, mocking APIs, end-to-end coverage."), case_sensitive=True),
+    _t("Node.js", "Backend", r"[Nn]ode\.js|[Nn]ode[Jj][Ss]|Express(?:\.js)?|express\.js",
        ("How did you handle errors and long-running work in the Node.js services in {ctx} without blocking the event loop?", "hard", "failure_handling",
-        "Async error handling, worker threads/queues, timeouts, graceful shutdown.")),
+        "Async error handling, worker threads/queues, timeouts, graceful shutdown."), case_sensitive=True),
     _t("FastAPI / Flask / Django", "Backend", r"fastapi|flask|django",
        ("How was the Python web API in {ctx} structured, validated and secured?", "medium", "architecture",
         "Request validation, authentication/authorisation, error handling, layering, tests.")),
-    _t("REST APIs", "APIs", r"rest(?:ful)?\s?apis?|apis?",
+    _t("REST APIs", "APIs", r"rest(?:ful)?\s?apis?|rest services",
        ("How did you version the APIs in {ctx} and keep them backward compatible for existing clients?", "medium", "decision_tradeoff",
         "Versioning scheme, additive changes, deprecation, contract tests."),
        ("How did the APIs in {ctx} handle retries, timeouts and duplicate requests?", "hard", "failure_handling",
@@ -121,7 +123,7 @@ TECHS: list[Tech] = [
     _t("TensorFlow / PyTorch", "Deep learning", r"tensorflow|pytorch|keras",
        ("How did you decide the model in {ctx} was good enough to ship, and how was it monitored afterwards?", "hard", "testing",
         "Offline metrics vs business metric, baselines, error analysis, drift monitoring.")),
-    _t("LLMs", "Machine learning", r"llms?|gpt|langchain|rag|large language models?|openai|ollama",
+    _t("LLMs", "Machine learning", r"llms?|gpt(?:-\d)?|langchain|retrieval.augmented generation|large language models?|openai|ollama",
        ("How did you evaluate the quality of the LLM outputs in {ctx}, and how did you handle wrong or unsafe answers?", "hard", "testing",
         "Evaluation sets, human review, guardrails, grounding/citations, prompt-injection defences.")),
     _t("Tableau / Power BI", "Analytics", r"tableau|power\s?bi|looker",
@@ -139,7 +141,7 @@ ACTIVITIES: list[Tech] = [
     _t("Migration", "Engineering", r"migrat(?:ed|ion|ing)",
        ("How did you plan and verify the migration in {ctx} so that nothing was lost or broken?", "medium", "failure_handling",
         "Dry runs, dual-writes or shadow reads, reconciliation, rollback plan, cut-over.")),
-    _t("Performance optimisation", "Engineering", r"optimi[sz](?:ed|ation|ing)|latency|throughput|faster",
+    _t("Performance optimisation", "Engineering", r"optimi[sz](?:ed|ation|ing)|latency|throughput",
        ("How did you find the bottleneck behind the optimisation in {ctx}, and how did you prove the improvement?", "medium", "performance_cost",
         "Profiling/measurement first, the specific change, before/after numbers under comparable load.")),
     _t("Real-time systems", "Engineering", r"real-?time|streaming|low-latency",

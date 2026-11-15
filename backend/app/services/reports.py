@@ -272,7 +272,8 @@ def resume_coverage(plan: dict[str, Any], questions: list[dict]) -> Optional[dic
         return None
     discussed = {((q.get("claim") or {}).get("label") or "") for q in asked if q["status"] in ("answered", "skipped")}
     def hit(label: str) -> bool:
-        return any(d == label or d.startswith(label + ":") or d.startswith(label) for d in discussed if d)
+        # AI-written resume questions label a bullet group "<role>: <first bullet>"; anything else must match exactly
+        return bool(label) and any(d == label or d.startswith(label + ": ") for d in discussed if d)
     unexplored = [ci for ci in inventory if not hit(ci.get("label") or "")]
     return {"claims_total": len(inventory), "claims_discussed": len(inventory) - len(unexplored), "unexplored": unexplored[:20],
             "questions": len(asked)}
@@ -457,23 +458,74 @@ def _mark_deleted_resumes(db: Database, data: dict[str, Any]) -> None:
         cl["resume_deleted"] = cl.get("resume_id") is None or cl.get("resume_id") not in alive
 
 
+REDACTED = "[redacted]"
+_SAFE_EVAL_KEYS = ("dimension_scores", "production_relevant", "question_level", "confidence", "profile", "profile_label", "weights",
+                   "classification", "followup_asked", "followup_kind")
+
+
 def redact(data: dict[str, Any]) -> dict[str, Any]:
-    """A shareable copy of a report: scores, feedback and questions stay; the candidate's own words and resume text are removed."""
-    import copy
-    out = copy.deepcopy(data)
-    for q in out.get("questions", []):
-        if q.get("claim"):
-            q["claim"] = {**q["claim"], "excerpt": "[redacted]"}
-        for t in q.get("turns", []):
-            if t.get("answer"):
-                t["answer"] = "[redacted]"
-            ev = t.get("evaluation") or {}
-            if ev.get("interpreted_answer"):
-                ev["interpreted_answer"] = "[redacted]"
-            for e in ev.get("evidence") or []:
-                e["quote"] = "[redacted]"
-    out.pop("ai_usage", None)
-    out["redacted"] = True
+    """A shareable copy of a report, built by ALLOW-LIST: scores, classifications, topics and generic advice only.
+
+    Removed: the candidate's answers and everything the grader wrote about them (it quotes and paraphrases the answer), follow-up
+    questions (they build on the answer), the model-written narrative, resume names, labels and excerpts, the text of resume
+    questions, decision reasons (they name resume claims), and model usage. Bank question texts are kept: they are the user's
+    own practice questions, not the candidate's words."""
+    src = data
+    out: dict[str, Any] = {"redacted": True}
+    iv = src.get("interview") or {}
+    cfg = iv.get("config") or {}
+    out["interview"] = {k: iv.get(k) for k in ("id", "title", "type", "status", "created_at", "completed_at", "end_reason")}
+    out["interview"]["config"] = {k: cfg.get(k) for k in ("interview_type", "mode", "strategy", "start_level", "strictness", "max_followups",
+                                                           "time_limit_minutes", "max_questions") if k in cfg}
+    out["summary"] = dict(src.get("summary") or {})
+    out["topics"] = [{k: t.get(k) for k in ("topic", "questions", "scored", "average_score", "question_numbers")} for t in src.get("topics") or []]
+    out["skills"] = [dict(k) for k in src.get("skills") or []]
+    out["scoring_rules"] = list(src.get("scoring_rules") or [])
+    out["progress"] = [dict(p) for p in src.get("progress") or []]
+    questions = []
+    for q in src.get("questions") or []:
+        resume = q.get("source") == "resume"
+        nq = {k: q.get(k) for k in ("position", "topic", "difficulty", "status", "score", "verdict", "followups_asked", "source")}
+        nq["text"] = "[resume question]" if resume else q.get("text", "")
+        if resume:
+            nq["topic"] = "Resume"
+        turns = []
+        for t in q.get("turns") or []:
+            ev = t.get("evaluation")
+            nt = {"seq": t.get("seq"), "kind": t.get("kind"), "status": t.get("status"), "score": t.get("score"), "source": t.get("source"),
+                  "question": (nq["text"] if t.get("kind") == "main" else "[follow-up question]"),
+                  "answer": REDACTED if t.get("answer") else t.get("answer"), "followup_reason": None,
+                  "evaluation": ({k: ev.get(k) for k in _SAFE_EVAL_KEYS if k in ev} | {"score": ev.get("score"), "verdict": ev.get("verdict")}) if ev else None}
+            turns.append(nt)
+        nq["turns"] = turns
+        questions.append(nq)
+    out["questions"] = questions
+    # rule-based numbers and topic names only; no model prose (it paraphrases answers)
+    scored = (out["summary"] or {}).get("average_score")
+    out["insights"] = {"overall_summary": (f"Average {scored}/10 across {out['summary'].get('scored')} scored question(s)." if scored is not None
+                                           else "No answers were scored in this session."),
+                       "strengths": [], "knowledge_gaps": [], "repeated_misconceptions": [],
+                       "topics_to_revise": [t for t in ((src.get("aggregated") or {}).get("topics_to_revise") or [])
+                                            if t in {x["topic"] for x in out["topics"]}], "recommendations": []}
+    out["insights_source"] = "rules"
+    out["narrative"] = None
+    out["aggregated"] = out["insights"]
+    out["narrative_status"] = "ready"
+    out["narrative_error"] = None
+    intel = src.get("intelligence")
+    if intel:
+        out["intelligence"] = {k: intel.get(k) for k in ("classifications", "difficulty", "conceptual_vs_practical", "profiles", "learning_plan")}
+        out["intelligence"]["evidence"] = {"quotes": 0, "verified": 0, "unverified_misconceptions": 0}
+        out["intelligence"]["consistency"] = {"flags": (intel.get("consistency") or {}).get("flags", []), "adjustments": []}
+    ad = src.get("adaptive")
+    if ad:
+        out["adaptive"] = {k: ad.get(k) for k in ("strategy", "start_level", "final_level", "pool_unused", "end_reason")}
+        out["adaptive"]["level_history"] = [{k: h.get(k) for k in ("from", "to", "after_question")} for h in ad.get("level_history") or []]
+        out["adaptive"]["events"] = [{"kind": e.get("kind"), "decision": e.get("decision"), "question": e.get("question"),
+                                      "level_before": e.get("level_before"), "level_after": e.get("level_after"),
+                                      "reason": e.get("decision", "").replace("_", " ")} for e in ad.get("events") or []]
+    else:
+        out["adaptive"] = None
     return out
 
 

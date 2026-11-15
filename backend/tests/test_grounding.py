@@ -47,8 +47,26 @@ def test_misconception_quoting_the_answer_is_grounded_without_evidence_items():
 
 
 def test_non_attempt_is_capped_and_classified():
-    g = gr.ground(ev(6), answers=["I don't know"], non_attempt=True)
+    g = gr.ground(ev(6, correct=[]), answers=["I don't know"], non_attempt=True)
     assert g.classification == "no_attempt" and g.dimension_scores.correctness <= 2 and g.adjustments
+
+
+def test_short_real_answer_with_dont_know_wording_is_not_capped():
+    """'You don't know the length upfront, so use a generator.' is a correct answer, not an 'I don't know'."""
+    g = gr.ground(ev(9, correct=["Generators avoid materialising the sequence"]), answers=["You don't know the length upfront, so use a generator."], non_attempt=True)
+    assert g.dimension_scores.correctness == 9 and g.classification == "correct" and not g.adjustments
+
+
+def test_unrelated_misconceptions_are_not_grounded_by_boilerplate_overlap():
+    e = ev(5, misconceptions=["The candidate said that indexes slow down reads", "The candidate said that joins delete rows"],
+           evidence=[{"kind": "incorrect", "point": "The candidate said that a left join is always slower", "quote": "slower than an inner join always"}])
+    g = gr.ground(e, answers=[ANSWER], non_attempt=False)
+    assert g.grounded_misconceptions == [] and len(g.unverified_misconceptions) == 2
+
+
+def test_nothing_right_and_only_unverified_errors_is_uncertain_not_no_attempt():
+    g = gr.ground(ev(1, correct=[], misconceptions=["claims something unprovable"]), answers=[ANSWER], non_attempt=False)
+    assert g.classification == "uncertain"
 
 
 def test_incomplete_is_not_reported_as_incorrect():

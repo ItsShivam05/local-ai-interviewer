@@ -84,15 +84,24 @@ class Context:
     tech: list[str]
 
 
+def _clean_lines(items: list[str]) -> list[str]:
+    """Resume lines that look like instructions to an AI never reach a question, an excerpt or a prompt (they are still reported)."""
+    return [x for x in items if not INJECTION_RE.search(x)]
+
+
 def _contexts(p: ResumeProfile) -> list[Context]:
     out: list[Context] = []
     for i, e in enumerate(p.experience):
         role = " at ".join(x for x in (e.title, e.company) if x) or f"Role {i + 1}"
+        if INJECTION_RE.search(role):
+            continue
         dates = " – ".join(x for x in (e.start, "present" if e.is_current and not e.end else e.end) if x)
-        out.append(Context(f"exp:{i}", "Experience", role, ", ".join(x for x in (role, e.location, dates) if x), list(e.bullets), []))
+        out.append(Context(f"exp:{i}", "Experience", role, ", ".join(x for x in (role, e.location, dates) if x), _clean_lines(list(e.bullets)), []))
     for i, pr in enumerate(p.projects):
         name = pr.name or f"Project {i + 1}"
-        out.append(Context(f"prj:{i}", "Projects", name, name + (f" ({pr.role})" if pr.role else ""), list(pr.bullets), list(pr.tech)))
+        if INJECTION_RE.search(name):
+            continue
+        out.append(Context(f"prj:{i}", "Projects", name, name + (f" ({pr.role})" if pr.role else ""), _clean_lines(list(pr.bullets)), _clean_lines(list(pr.tech))))
     return out
 
 
@@ -194,7 +203,7 @@ def claims(contexts: list[Context], p: ResumeProfile, src: SourceIndex) -> list[
         for b in c.bullets:
             kind = "achievement" if (METRIC_RE.search(b) or IMPACT_RE.search(b)) else "responsibility"
             out.append({"kind": kind, "section": c.section, "label": c.label, "text": b, "has_metric": bool(METRIC_RE.search(b)), "source": src.locate(b)})
-    for a in p.achievements:
+    for a in _clean_lines(list(p.achievements)):
         out.append({"kind": "achievement", "section": "Achievements", "label": "Achievements", "text": a, "has_metric": bool(METRIC_RE.search(a)), "source": src.locate(a)})
     return out
 
@@ -320,9 +329,14 @@ def _q(rid: int, rname: str, text: str, rubric: str, topic: str, difficulty: str
     return {"text": text, "rubric": rubric, "topic": topic, "difficulty": difficulty, "kind": kind, "resume_id": rid, "resume_name": rname, "claim": claim}
 
 
+def claim_inventory(profile: ResumeProfile) -> list[dict[str, str]]:
+    """The roles and projects an interview could discuss (cheap: used for every interview plan)."""
+    return [{"section": c.section, "label": c.label} for c in _contexts(profile)]
+
+
 # ---------------------------------------------------------------- entry point
 def build(resume_id: int, resume_name: str, profile: ResumeProfile, raw_text: str, *, today: Optional[date] = None,
-          question_limit: int = 12) -> dict[str, Any]:
+          question_limit: int = 12, exclude: Optional[list[str]] = None) -> dict[str, Any]:
     src = SourceIndex(raw_text)
     contexts = _contexts(profile)
     skills = skill_inventory(profile, contexts, src)
@@ -340,8 +354,8 @@ def build(resume_id: int, resume_name: str, profile: ResumeProfile, raw_text: st
         "skills": skills, "projects": projects, "experience": exp, "relationships": tech_relationships(contexts),
         "claims": claims(contexts, profile, src), "clarifications": areas,
         "extraction": extraction_quality(profile, src), "injection_warnings": injection_warnings(raw_text),
-        "suggested_questions": suggested_questions(resume_id, resume_name, contexts, areas, limit=question_limit),
-        "claim_inventory": [{"section": c.section, "label": c.label} for c in contexts],
+        "suggested_questions": suggested_questions(resume_id, resume_name, contexts, areas, limit=question_limit, exclude=exclude),
+        "claim_inventory": claim_inventory(profile),
         "notes": ["Built from your saved profile; edit the profile to correct anything and this view updates.",
                   "Clarification areas are things an interviewer may ask about, not judgements about honesty."],
     }

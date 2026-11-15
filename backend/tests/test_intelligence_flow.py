@@ -58,7 +58,7 @@ def test_repair_retry_then_success(client, set_id, fake):
 
 def test_i_dont_know_is_capped_and_gets_no_followup(client, set_id, fake):
     add(client, set_id, "Explain the CAP theorem.")
-    fake.chat_replies = [graded(6, followup="Which two properties hold under partition?")]
+    fake.chat_replies = [graded(6, correct=[], followup="Which two properties hold under partition?")]
     st = start_interview(client, set_id, max_followups=2)
     st = answer(client, st, "I don't know").json()
     ev = st["current"]["thread"][0]["evaluation"]
@@ -151,3 +151,42 @@ def test_old_evaluations_without_v6_fields_still_report(client, container, set_i
         reports.store_report(c, st["id"])
     rep = client.get(f"/api/interviews/{st['id']}/report").json()
     assert rep["summary"]["average_score"] == 7.0 and rep["intelligence"]["classifications"] == []
+
+
+def test_redaction_is_an_allow_list_across_all_formats(client, container, fake):
+    """Fable finding: model prose quotes the answer. A sentinel in the answer, the grader's text and the resume must vanish everywhere."""
+    from intel_fixtures import ready_resume
+    import pypdfium2 as pdfium
+    S = "ZEBRASENTINEL"
+    rid = ready_resume(container, name=f"{S}_CV")
+    with container.db.tx() as c:
+        c.execute("UPDATE resumes SET profile_json=replace(profile_json, 'Acme Corp', ?), raw_text=replace(raw_text, 'Acme Corp', ?)", (S, S))
+    r = client.post("/api/interviews", json={"set_id": None, "config": {"include_bank": False, "max_followups": 1, "feedback_mode": "at_end"},
+                                             "resume_auto": {"resume_id": rid, "count": 2}})
+    st = r.json()
+    leaky = graded(6, correct=[f"Mentioned {S} pipeline"], missing=[f"{S} detail"], misconceptions=[f"said {S}"],
+                   followup=f"What about {S} retries?", extra={"verdict_summary": f"{S} answer", "uncertainty_note": S, "ideal_answer": S})
+    fake.chat_replies = [leaky, graded(7), graded(7), {"overall_summary": S, "strengths": [S], "knowledge_gaps": [], "repeated_misconceptions": [],
+                                                       "topics_to_revise": [], "recommendations": [S]}]
+    for _ in range(3):
+        if st["status"] != "in_progress":
+            break
+        st = answer(client, st, f"I built the {S} pipeline myself").json()
+    iid = st["id"]
+    full = client.get(f"/api/interviews/{iid}/report/export?format=json").text
+    assert S in full
+    for fmt in ("json", "md"):
+        assert S not in client.get(f"/api/interviews/{iid}/report/export?format={fmt}&redact=true").text, fmt
+    pdf = client.get(f"/api/interviews/{iid}/report/export?format=pdf&redact=true").content
+    doc = pdfium.PdfDocument(pdf)
+    text = "".join(doc[i].get_textpage().get_text_range() for i in range(len(doc)))
+    assert "Interview Report" in text and S not in text
+
+
+def test_backup_never_uses_the_shared_temp_folder_and_cleans_leftovers(client, container):
+    folder = container.settings.data_dir / "tmp"
+    folder.mkdir(parents=True, exist_ok=True)
+    stale = folder / "interviewer-backup-old.sqlite3"
+    stale.write_bytes(b"x")
+    assert client.get("/api/backup").status_code == 200
+    assert not stale.exists() and not list(folder.glob("interviewer-backup-*.sqlite3"))

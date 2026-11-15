@@ -45,13 +45,19 @@ def quote_in_answer(quote: str, answers: list[str], min_words: int = 2) -> bool:
     return False
 
 
+_STOP = {"the", "and", "that", "this", "candidate", "said", "says", "states", "stated", "claims", "claimed", "thinks", "believes", "answer",
+         "with", "for", "are", "was", "were", "not", "which", "what", "from", "they", "their", "there", "into", "than", "then", "when",
+         "always", "never", "only", "also", "about", "incorrectly", "wrongly", "mentions", "mentioned", "suggests", "implies"}
+
+
 def _tokens(text: str) -> set[str]:
-    return {t for t in _WORD.findall((text or "").lower()) if len(t) > 2}
+    return {t for t in _WORD.findall((text or "").lower()) if len(t) > 2 and t not in _STOP}
 
 
-def _related(a: str, b: str, threshold: float = 0.25) -> bool:
+def _related(a: str, b: str, threshold: float = 0.4) -> bool:
+    """Content-word overlap (boilerplate such as "the candidate said" removed) between a misconception and a quoted error."""
     x, y = _tokens(a), _tokens(b)
-    return bool(x and y) and len(x & y) / min(len(x), len(y)) >= threshold
+    return bool(x and y) and len(x & y) >= 1 and len(x & y) / min(len(x), len(y)) >= threshold
 
 
 @dataclass
@@ -91,7 +97,7 @@ def split_misconceptions(misconceptions: list[str], evidence: list[EvidenceItem]
 
 
 def classify(*, dims: DimensionScores, grounded_misconceptions: list[str], correct_points: list[str], confidence: str,
-             non_attempt: bool) -> str:
+             non_attempt: bool, claimed_errors: int = 0) -> str:
     """Deterministic answer classification. Errors must be grounded to call an answer incorrect."""
     if non_attempt:
         return "no_attempt"
@@ -101,6 +107,9 @@ def classify(*, dims: DimensionScores, grounded_misconceptions: list[str], corre
     if grounded_misconceptions and c <= 4:
         return "incorrect"
     if not grounded_misconceptions and not correct_points and c <= 2:
+        # nothing right and nothing provably wrong: a claimed-but-unverified error means the grader may be mistaken
+        if claimed_errors:
+            return "uncertain"
         return "no_attempt" if comp <= 1 else "incorrect"
     if c >= 7 and comp >= 7 and not grounded_misconceptions:
         return "correct"
@@ -130,6 +139,9 @@ def ground(ev: LLMEvaluation, *, answers: list[str], non_attempt: bool) -> Groun
     if unverified:
         flags.append({"code": "ungrounded_misconception", "message": "Some claimed errors could not be tied to anything in the answer, so they are listed as unverified and not counted as mistakes."})
 
+    # "I don't know"-style wording in a SHORT answer is only a non-attempt if the grader also saw nothing of value in it;
+    # "You don't know the length upfront, so use a generator" is a real answer.
+    non_attempt = non_attempt and (not ev.correct_points or dims.correctness <= 4)
     if non_attempt:
         high = [d for d in ("correctness", "completeness", "depth", "practical_application", "clarity") if getattr(dims, d) > 2]
         if high:
@@ -153,6 +165,7 @@ def ground(ev: LLMEvaluation, *, answers: list[str], non_attempt: bool) -> Groun
             flags.append({"code": "high_score_without_evidence", "message": "A high correctness score was given without citing anything correct; confidence lowered."})
             confidence = "low" if confidence == "low" else "medium"
 
-    cls = classify(dims=dims, grounded_misconceptions=grounded, correct_points=ev.correct_points, confidence=confidence, non_attempt=non_attempt)
+    cls = classify(dims=dims, grounded_misconceptions=grounded, correct_points=ev.correct_points, confidence=confidence, non_attempt=non_attempt,
+                   claimed_errors=len(unverified))
     return Grounding(evidence=evidence, grounded_misconceptions=grounded, unverified_misconceptions=unverified, flags=flags,
                      adjustments=adjustments, dimension_scores=dims, confidence=confidence, classification=cls)

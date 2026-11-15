@@ -28,6 +28,7 @@ STRATEGIES = ["progressive", "deep_dive", "practical", "conceptual", "mixed", "r
 
 RAISE_AT, LOWER_AT = 7.5, 4.5           # weighted recent average needed to move up / down
 COOLDOWN = 2                            # scored answers needed since the last level change
+REVERSAL_COOLDOWN = 4                   # ... before reversing the direction of the last change (stops up/down/up oscillation)
 WINDOW = 3                              # most recent scored answers considered
 CONF_WEIGHT = {"high": 1.0, "medium": 0.7, "low": 0.35}
 TOPIC_EVIDENCE = 2                      # scored answers (not low-confidence) that make a topic "assessed"
@@ -130,6 +131,11 @@ def update_level(state: EngineState, history: list[Asked]) -> tuple[EngineState,
         elif avg <= LOWER_AT and state.level > 0:
             new = state.level - 1
             reason = f"Recent answers averaged {avg:.1f}/10 over {len(recent_scored)}, so the next question is easier."
+    if new != state.level and state.level_history:
+        last = state.level_history[-1]
+        last_dir = LEVELS.index(last["to"]) - LEVELS.index(last["from"]) if last.get("to") in LEVELS and last.get("from") in LEVELS else 0
+        if last_dir and (new - state.level) * last_dir < 0 and state.scored_since_change < REVERSAL_COOLDOWN:
+            return state, None                   # a reversal needs more evidence than a continuation
     if new != state.level:
         st = EngineState(level=new, scored_since_change=0, revisited=list(state.revisited), focus_topic=state.focus_topic,
                          level_history=[*state.level_history, {"from": LEVELS[state.level], "to": LEVELS[new], "after_question": len(finished), "reason": reason}])
@@ -161,19 +167,27 @@ def topic_stats(history: list[Asked]) -> dict[str, dict[str, Any]]:
 
 
 def topic_assessed(stat: Optional[dict[str, Any]]) -> bool:
-    """Enough evidence on a topic: two reliable scores that agree (within 3 points), or three answers of any kind."""
+    """Enough evidence on a topic: two reliable scores that agree (within 3 points), or three scored answers. Skips are not evidence."""
     if not stat:
         return False
-    if stat["asked"] >= 3:
-        return True
     sc = stat["scores"]
+    if len(sc) >= 3:
+        return True
     return stat["reliable"] >= TOPIC_EVIDENCE and (max(sc) - min(sc) <= 3)
 
 
+_FUNCTION_WORDS = {"what", "when", "where", "which", "why", "how", "would", "could", "should", "you", "your", "the", "and", "for", "with",
+                   "use", "using", "does", "did", "are", "was", "were", "this", "that", "into", "from", "about", "explain", "describe",
+                   "difference", "between", "tell", "give", "example", "can", "its", "their", "them", "have", "has"}
+
+
 def _similar(a: str, b: str) -> bool:
-    x = {t for t in re.findall(r"[a-z0-9]+", a.lower()) if len(t) > 2}
-    y = {t for t in re.findall(r"[a-z0-9]+", b.lower()) if len(t) > 2}
-    return bool(x and y) and len(x & y) / len(x | y) >= 0.7
+    """Near-duplicate test on CONTENT words: "When would you use caching?" and "When would you use sharding?" are different."""
+    if re.sub(r"\W+", " ", a.lower()).strip() == re.sub(r"\W+", " ", b.lower()).strip():
+        return True
+    x = {t for t in re.findall(r"[a-z0-9]+", a.lower()) if len(t) > 2 and t not in _FUNCTION_WORDS}
+    y = {t for t in re.findall(r"[a-z0-9]+", b.lower()) if len(t) > 2 and t not in _FUNCTION_WORDS}
+    return bool(x and y) and len(x & y) / len(x | y) >= 0.75
 
 
 # ---------------------------------------------------------------- selection
@@ -258,7 +272,9 @@ def decide_next(*, pool: list[PoolQ], history: list[Asked], state: EngineState, 
             fs = stats.get(focus)
             if fs and len(fs["scores"]) >= 4 and state.scored_since_change >= 2 and focus.lower() not in {t.lower() for t in remaining_topics}:
                 return Decision("end", "end_objectives", f"The focus topic {focus} has been explored in depth.", **base), state
-        elif remaining_topics and all(topic_assessed(stats.get(t)) for t in remaining_topics) and all(topic_assessed(s) for s in stats.values()):
+        elif (len(stats) >= 2 and UNCATEGORIZED not in remaining_topics and UNCATEGORIZED not in stats
+              and remaining_topics and all(topic_assessed(stats.get(t)) for t in remaining_topics) and all(topic_assessed(s) for s in stats.values())):
+            # only with real topic structure: an untagged or single-topic pool always runs to its question limit
             return Decision("end", "end_objectives", "Every planned topic has enough evidence for a reliable assessment.", **base), state
 
     last_topic = topic_of(asked[-1].topic) if asked else None

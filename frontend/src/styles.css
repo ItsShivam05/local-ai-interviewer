@@ -3,7 +3,7 @@
   color-scheme: light;
   --bg: #f4f5fd; --bg2: #eef0fb; --panel: #ffffff; --panel-2: #f3f4fc; --text: #161a3a; --muted: #626889; --faint: #646a8c; --line: #e6e8f5;
   --accent: #5648f0; --accent-2: #6d5cf8; --accent-ink: #ffffff; --accent-soft: #ecebff; --accent-text: #4338d8;
-  --ok: #0f7a54; --ok-soft: #e2f6ec; --warn: #d98a06; --warn-ink: #8f5700; --warn-soft: #fff1d6; --bad: #bf3030; --bad-soft: #fde8e8; --blue: #2f6bf0; --blue-soft: #e5eeff;
+  --ok: #0f7a54; --ok-soft: #e2f6ec; --warn: #d98a06; --warn-ink: #8f5700; --warn-soft: #fff1d6; --bad: #bf3030; --bad-soft: #fde8e8; --blue: #2f6bf0; --blue-soft: #e5eeff; --blue-text: #1f53c4;
   --shadow: 0 1px 2px rgba(40,45,110,.05), 0 6px 22px rgba(60,66,150,.07); --radius: 16px;
   --font: "Inter Variable", Inter, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, monospace;

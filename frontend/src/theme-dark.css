@@ -5,7 +5,7 @@
   color-scheme: dark;
   --bg: #0d1020; --bg2: #11152b; --panel: #161a33; --panel-2: #1e2342; --text: #e9ebf8; --text-2: #b6bbd9; --muted: #9ba1c4; --faint: #8b91b6; --line: #2a3058;
   --accent: #6a5cf5; --accent-2: #7366f7; --accent-ink: #ffffff; --accent-soft: #27245c; --accent-text: #bab2ff;
-  --ok: #3fcf94; --ok-soft: #11342b; --warn: #f2b13a; --warn-ink: #f2b13a; --warn-soft: #3a2f13; --bad: #ff8585; --bad-soft: #3b1c25; --blue: #82a8ff; --blue-soft: #172b50;
+  --ok: #3fcf94; --ok-soft: #11342b; --warn: #f2b13a; --warn-ink: #f2b13a; --warn-soft: #3a2f13; --bad: #ff8585; --bad-soft: #3b1c25; --blue: #82a8ff; --blue-soft: #172b50; --blue-text: #82a8ff;
   --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.32);
 }
 :root[data-theme="dark"] body { background: radial-gradient(1100px 560px at 70% -12%, #1c2050 0%, transparent 62%), linear-gradient(180deg, #0f1226, #0b0e1d); }

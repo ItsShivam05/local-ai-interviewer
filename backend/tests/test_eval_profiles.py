@@ -69,7 +69,7 @@ def test_user_rubric_scales_every_profile():
 
 def test_difficulty_awareness_basic_and_advanced():
     d = dims(correctness=9, completeness=9, clarity=9, depth=3, practical_application=3)
-    p = ep.get_profile("general")
+    p = ep.get_profile("sql")
     basic = ep.score_answer(d, p, RubricSettings(), "basic", False).score
     std = ep.score_answer(d, p, RubricSettings(), "standard", False).score
     adv = ep.score_answer(d, p, RubricSettings(), "advanced", False).score
@@ -103,3 +103,15 @@ def test_rubric_fingerprint_is_stable_and_versioned():
 def test_every_profile_is_described():
     out = ep.describe_profiles()
     assert {p["key"] for p in out} == set(ep.PROFILES) and all(p["dimensions"] for p in out)
+
+
+def test_general_profile_is_v1_even_on_advanced_questions():
+    d = dims(correctness=9, completeness=8, depth=3, practical_application=5, clarity=7, production_awareness=4)
+    for prod in (True, False):
+        assert ep.score_answer(d, ep.get_profile("general"), RubricSettings(), "advanced", prod).score == compute_score(d, prod, RubricSettings(), "advanced")
+
+
+@pytest.mark.parametrize("text", ["Explain the transformer architecture", "How do you join a list of strings in Python?",
+                                  "How do you index into a numpy array?", "What is regression testing?"])
+def test_ambiguous_questions_fall_back_to_general(text):
+    assert ep.detect_category(topic=None, text=text) == "general"

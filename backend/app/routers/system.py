@@ -159,19 +159,35 @@ def evaluation_profiles() -> dict[str, Any]:
 @router.get("/backup")
 def backup(request: Request, background: BackgroundTasks) -> FileResponse:
     """A consistent copy of the whole database (SQLite online backup), downloaded to this computer only.
-    It contains your answers, reports, resumes' text and any saved cloud API key: keep it private."""
-    db = request.app.state.c.db
-    fd, tmp = tempfile.mkstemp(prefix="interviewer-backup-", suffix=".sqlite3")
+    It contains your answers, reports, resumes' text and any saved cloud API key: keep it private.
+    The copy is written inside the private data folder (0700), never the shared temp folder, and leftovers from an interrupted
+    download are removed on the next backup and at startup of this endpoint's next call."""
+    c = request.app.state.c
+    folder = c.settings.data_dir / "tmp"
+    folder.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(folder, 0o700)
+    except OSError:
+        pass
+    for old in folder.glob("interviewer-backup-*.sqlite3"):      # an earlier download that was interrupted
+        try:
+            old.unlink()
+        except OSError:
+            pass
+    fd, tmp = tempfile.mkstemp(prefix="interviewer-backup-", suffix=".sqlite3", dir=folder)
     os.close(fd)
+    dst = None
     try:
         dst = sqlite3.connect(tmp)
-        with db.read() as src:
+        with c.db.read() as src:
             src.backup(dst)
-        dst.close()
-        os.chmod(tmp, 0o600)
     except BaseException:
+        if dst is not None:
+            dst.close()
         os.unlink(tmp)
         raise
+    dst.close()
+    os.chmod(tmp, 0o600)
     background.add_task(os.unlink, tmp)
     stamp = utcnow()[:10]
     return FileResponse(tmp, media_type="application/vnd.sqlite3", filename=f"interviewer-backup-{stamp}.sqlite3",

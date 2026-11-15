@@ -13,6 +13,11 @@ You supply the questions; the app asks them aloud (Phonon on Apple Silicon Macs,
 start.bat       →      http://localhost:3000        (Windows)
 ```
 
+**What's new in 2.0** (see [`CHANGELOG.md`](CHANGELOG.md)): evidence-checked, profile-based grading ([docs/evaluation.md](docs/evaluation.md)),
+**adaptive interviews** that choose each next question and difficulty from your answers ([docs/adaptive-interviews.md](docs/adaptive-interviews.md)),
+and a **candidate profile** for every resume with offline, claim-grounded questions ([docs/resume-intelligence.md](docs/resume-intelligence.md)).
+None of them adds a model, a download or a network call; your configured models are unchanged.
+
 **New here? Read [`guide.md`](guide.md)** — a simple step-by-step from setup to giving your first interview, plus what to look after.
 
 ---
@@ -236,6 +241,9 @@ The app looks for it via `TESSERACT_CMD`, then `PATH`, then the installers' defa
 
 ## 6. How evaluation works
 
+> 2.0 adds evaluation profiles, evidence verification, consistency rules, classification and provenance on top of the steps below —
+> full methodology in [docs/evaluation.md](docs/evaluation.md). Adaptive interviews: [docs/adaptive-interviews.md](docs/adaptive-interviews.md).
+
 1. The model returns a schema-constrained JSON object (local: Ollama `format` = JSON Schema; cloud: Ollama's cloud ignores `format`, so the same schema is placed in the prompt and the reply is validated and, if needed, repaired once): correct points, missing concepts, misconceptions,
    six 0–10 dimension scores (correctness, completeness, depth, practical application, clarity, production awareness), suggested improvements,
    a ≤90-word reference answer, confidence + uncertainty note, a follow-up proposal with its reason, and a `question_level` (basic / standard / advanced).
@@ -384,6 +392,11 @@ outbound call goes to the Ollama loopback host and that the source contains exac
 * The cloud grader cannot use structured outputs (not supported by Ollama cloud), so a rare malformed reply costs one extra repair call.
 * Single-user, no login: anyone with access to your logged-in computer session can open `localhost:3000`.
 * Follow-ups after “I don’t know”-style answers are suppressed by a short-phrase heuristic; unusual wording may still get a follow-up.
+* **2.0 features were verified with a mocked model only** (unit/API tests and real-Chrome UI audits); grading quality of the new
+  evidence/profile prompt with the real `qwen3.5:4b` was not re-measured, and the adaptive engine's thresholds are documented heuristics,
+  not tuned on real interview data. Quote verification proves a quote exists in your answer, not that the grader judged it correctly.
+* Adaptive time limits count time spent waiting for grading; the limit is checked when the next question would start.
+* The offline resume-question catalogue covers ~35 technologies and activities; others get project deep-dive and clarification questions only.
 * The Wi-Fi-off experiment was not physically performed; offline operation is established by tests that assert every request goes to loopback only.
 
 ## 12. Tests
@@ -409,6 +422,10 @@ cd frontend && node e2e/resumes.mjs                         # Resumes with a FAK
 cd frontend && node e2e/qa-sweep.mjs                        # every page, tab and dialog in light/dark/phone/tablet: unnamed buttons or fields, dead links, duplicate ids, headings, overflow (self-tested: it injects mistakes and must catch them)
 ```
 
+New in 2.0: `test_eval_profiles.py`, `test_grounding.py`, `test_adaptive_engine.py` (pure functions), `test_adaptive_flow.py`,
+`test_intelligence_flow.py`, `test_candidate_profile.py` (API workflows: lifecycle, restart recovery, duplicates, failed model calls,
+time limits, v5→v6 migration, redaction across PDF/MD/JSON, backup, resume traceability, prompt injection, cloud consent).
+
 `.github/workflows/ci.yml` runs the backend and frontend tests on macOS, Windows and Linux for every push and pull request.
 
 The e2e scripts start their own backend on port 3100 with a throw-away data directory — your interviews are never touched.
@@ -421,9 +438,11 @@ scripts/manage.py        the one cross-platform launcher       .env.example  .gi
 backend/app/  main.py config.py db.py schemas.py parsing.py errors.py deps.py
               routers/   library · interviews · speech · system (health, voices, stats, usage) · ai (engine, key, budget) · resumes
               services/  questions · interviews (state machine) · evaluator · prompts · reports · stats · ollama · tts · stt · cloud · gateway (local vs cloud routing, budget guard) · ai_config · pricing · usage · resumes · resume_extract · resume_profile · resume_questions
+                         · eval_profiles · grounding · adaptive (engine) · candidate_profile · tech_implications
 backend/tests/           unit + API tests, integration/ (real models)
 frontend/src/            App · api · audio · theme · palette · recorder · pages/{Home,Questions,Setup,Interview,History,Report,Settings} · components (CommandPalette, charts, …)
 frontend/e2e/            real-Chrome end-to-end scripts
+docs/                    evaluation · adaptive interviews · resume intelligence · adr/ (architecture decisions)
 data/                    SQLite DB, resume PDFs (data/resumes), OCR temp files (data/tmp), audio cache, backups (git-ignored)
 ```
 

@@ -17,7 +17,7 @@ Implementation: `backend/app/services/candidate_profile.py`, `tech_implications.
 | Technology relationships | technologies used together in the same role or project. |
 | Claims | responsibilities and achievements (with or without numbers), each with its source reference. |
 | Clarification areas | vague contribution ("helped", "worked on"), team vs individual ("we"), a number without a baseline, an improvement without a measure, a listed skill with no evidence of use, a role with no description, a timeline gap. Worded as things worth preparing — never as doubts about honesty. |
-| Injection warnings | lines that look like instructions to an AI ("ignore previous instructions", "rate this candidate 10/10"). They are shown, never followed: resume text is always fenced as untrusted data in prompts. |
+| Injection warnings | lines that look like instructions to an AI ("ignore previous instructions", "rate this candidate 10/10"). They are shown, never followed, and such lines are left out of every offline question and claim excerpt; resume text is always fenced as untrusted data in prompts. |
 
 ## Claim-grounded questions
 
@@ -34,7 +34,8 @@ Questions come from three sources, interleaved and de-duplicated:
 
 Every question carries its claim `{section, label, excerpt}` — the exact resume text it is about — which is stored with the interview,
 shown in the report, and fenced as untrusted context when the answer is graded. Activity patterns are deliberately narrow
-("data pipeline", not any "pipeline") to avoid irrelevant questions (tested).
+("data pipeline", not any "pipeline"; "React" not "React to …"; "AWS Lambda" not a Python lambda) to avoid questions about technology the
+resume never claims (tested). Offline questions that repeat a reviewed question are dropped.
 
 The existing **AI question writer** (Interview → Questions from your resume) is unchanged and still available; the offline generator is
 an additional, instant option (`resume_auto`).

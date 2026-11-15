@@ -81,13 +81,14 @@ class EvalProfile:
         return self.meaning.get(dim) or DIMENSION_MEANING[dim]
 
 
-def _p(key, label, guidance="", meaning=None, **w) -> EvalProfile:
-    return EvalProfile(key=key, label=label, version=PROFILES_VERSION, weights=w, meaning=meaning or {}, guidance=guidance)
+def _p(key, label, guidance="", meaning=None, advanced_scaled=None, **w) -> EvalProfile:
+    extra = {} if advanced_scaled is None else {"advanced_scaled": advanced_scaled}
+    return EvalProfile(key=key, label=label, version=PROFILES_VERSION, weights=w, meaning=meaning or {}, guidance=guidance, **extra)
 
 
 PROFILES: dict[str, EvalProfile] = {p.key: p for p in [
     # identical to the v1 global rubric, so questions without a recognisable category are scored exactly as before
-    _p("general", "General technical", correctness=0.30, completeness=0.20, depth=0.15, practical_application=0.15, clarity=0.10, production_awareness=0.10),
+    _p("general", "General technical", advanced_scaled=(), correctness=0.30, completeness=0.20, depth=0.15, practical_application=0.15, clarity=0.10, production_awareness=0.10),
     _p("sql", "SQL", "SQL: check set semantics, NULL handling, join/aggregation correctness and whether the query would return the right rows.",
        correctness=0.30, completeness=0.15, conceptual_understanding=0.10, problem_solving=0.10, edge_cases=0.10, depth=0.05,
        practical_application=0.10, clarity=0.05, production_awareness=0.05),
@@ -116,7 +117,7 @@ _RULES: list[tuple[str, re.Pattern]] = [
     ("system_design", re.compile(r"\b(system design|design (a|an|the)\b|architect|scal(e|ability|ing)|load balanc|sharding|rate limit|high availability|microservice|cap theorem|distributed system)", re.I)),
     ("sql", re.compile(r"\b(sql|select|join|group by|having|window function|cte|index(es|ing)?|primary key|foreign key|normali[sz]|postgres|mysql|sqlite|query|queries|database)\b", re.I)),
     ("data_engineering", re.compile(r"\b(etl|elt|pipeline|airflow|dag|spark|kafka|streaming|batch|data warehouse|snowflake|bigquery|redshift|dbt|data lake|lakehouse|partition|cdc|incremental load|idempoten|data engineering|hadoop|flink)\b", re.I)),
-    ("machine_learning", re.compile(r"\b(machine learning|ml\b|model training|overfit|underfit|regulari[sz]|gradient|neural|deep learning|classifier|regression|precision|recall|f1|bias.variance|feature engineering|cross.validation|llm|transformer|embedding)", re.I)),
+    ("machine_learning", re.compile(r"\b(machine learning|ml\b|model training|overfit|underfit|regulari[sz]|gradient|neural|deep learning|classifier|regression|precision|recall|f1|bias.variance|feature engineering|feature scaling|cross.validation|llm|transformers?|embeddings?|batch normali[sz]ation|gradient descent)", re.I)),
     ("python", re.compile(r"\b(python|pythonic|list comprehension|generator|decorator|gil|asyncio|pandas|numpy|django|flask|fastapi|pip|virtualenv|__init__|dict(ionary)?|tuple)\b", re.I)),
     ("software_engineering", re.compile(r"\b(oop|object.oriented|solid|design pattern|unit test|testing|refactor|code review|ci/?cd|git|api|rest|concurren|thread|memory leak|complexity|algorithm|data structure|software engineering)\b", re.I)),
 ]
@@ -127,21 +128,35 @@ _TOPIC_ALIASES = {
 }
 
 
+def _hits(rx: re.Pattern, text: str) -> int:
+    return len({m.group(0).lower() for m in rx.finditer(text)})
+
+
 def detect_category(*, topic: Optional[str], text: str, interview_type: str = "technical") -> str:
-    """Pick the profile for a question. Order: HR interview -> explicit topic alias -> topic keywords -> question keywords -> general."""
+    """Pick the profile for a question. Order: HR interview -> explicit topic alias -> topic keywords -> question keywords -> general.
+
+    Within the topic (then the text), every rule is scored by its number of DISTINCT keyword hits; the best one wins only if it is
+    unambiguous. A tie (e.g. "join a list of strings in Python": one SQL word, one Python word) falls back to the general profile,
+    because a wrong profile is worse than a neutral one."""
     if interview_type == "hr":
         return "behavioral"
     t = (topic or "").strip().lower()
     if t in _TOPIC_ALIASES:
         return _TOPIC_ALIASES[t]
-    for source in (t, text or ""):
+    for source, is_text in ((t, False), (text or "", True)):
         if not source:
             continue
+        scores = {}
         for key, rx in _RULES:
-            if key == "behavioral" and interview_type == "technical" and source is text:
+            if key == "behavioral" and interview_type == "technical" and is_text:
                 continue            # in a technical interview a passing "strength" in the question is not a behavioural question
-            if rx.search(source):
-                return key
+            n = _hits(rx, source)
+            if n:
+                scores[key] = n
+        if scores:
+            best = max(scores.values())
+            winners = [k for k, v in scores.items() if v == best]
+            return winners[0] if len(winners) == 1 else "general"
     return "general"
 
 

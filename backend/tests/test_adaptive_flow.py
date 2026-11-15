@@ -51,7 +51,7 @@ def test_difficulty_drops_after_weak_answers(client, set_id, fake):
     st = start(client, set_id, start_level="advanced", max_questions=4)
     assert st["items"][0]["difficulty"] == "hard"
     fake.chat_replies = [graded(2), graded(2), graded(5), graded(5)]
-    st = answer(client, st, "Not sure, maybe an index").json()
+    st = answer(client, st, "Maybe add an index on the filter column").json()
     st = answer(client, st, "Something about memory").json()
     assert st["adaptive"]["level"] == "intermediate" and "easier" in st["adaptive"]["current_reason"]
     assert st["items"][-1]["difficulty"] == "medium"
@@ -218,3 +218,23 @@ def test_v5_database_upgrades_to_v6_and_old_interviews_still_load(tmp_path, fake
     st = state(client, 1)
     assert st["mode"] == "fixed" and st["adaptive"] is None and st["items"][0]["text"] == "Old question?"
     assert Database(path)                                     # re-opening an up-to-date database is a no-op
+
+
+def test_untagged_or_single_topic_pool_runs_to_its_question_limit(client, set_id, fake):
+    for w in ["caching", "sharding", "hashing", "queues", "retries", "logging", "tracing", "batching"]:
+        client.post(f"/api/sets/{set_id}/questions", json={"text": f"When would you use {w} in a backend?"})
+    st = start(client, set_id, max_questions=6)
+    fake.chat_replies = [graded(8) for _ in range(6)]
+    for _ in range(6):
+        st = answer(client, st, "A reasonable explanation").json()
+    assert st["status"] == "completed" and st["end_reason"] == "end_max" and len(st["items"]) == 6
+
+
+def test_reviewed_and_offline_resume_questions_are_not_asked_twice(client, container, fake):
+    rid = ready_resume(container)
+    offline = client.get(f"/api/resumes/{rid}/intelligence").json()["suggested_questions"][0]
+    dup = {k: offline[k] for k in ("text", "rubric", "topic", "difficulty", "resume_id", "resume_name", "claim")}
+    r = client.post("/api/interviews", json={"set_id": None, "config": {"include_bank": False, "max_followups": 0},
+                                             "resume_questions": [dup], "resume_auto": {"resume_id": rid, "count": 4}})
+    texts = [i["text"] for i in r.json()["items"]]
+    assert texts.count(dup["text"]) == 1 and len(texts) == len(set(texts))      # asked once; the offline generator skipped it

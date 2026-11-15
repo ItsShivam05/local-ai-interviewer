@@ -31,7 +31,8 @@ persists its decision **in the same SQLite transaction** as the state change, so
 - Up when the weighted average ≥ 7.5 and both of the last two scores ≥ 6.5; down when ≤ 4.5.
 - If most of that evidence is low-confidence, the level is held.
 - Two **skipped** questions in a row lower the level. Skips are never scores: they don't enter any average.
-- Alternating strong/weak answers cannot oscillate the level (tested).
+- **Reversing** the direction of the last change needs four answers instead of two, so alternating strong/weak answers (e.g. strong
+  on medium, weak on hard) cannot make the level flip back and forth (tested).
 
 ## Choosing the next question
 
@@ -44,13 +45,15 @@ Every pool question gets a fit score; ties go to the original order:
   not yet discussed, then claims explained weakly;
 - a topic that averaged below 5 is **revisited once**, after at least one other question;
 - topics that already have sufficient evidence are de-prioritised;
-- anything too similar to a question already asked (token Jaccard ≥ 0.7) is excluded.
+- anything that duplicates a question already asked (same normalised text, or content-word overlap ≥ 0.75 — function words such as
+  "when would you use" are ignored, so templated but different questions are kept) is excluded.
 
 ## When it ends
 
 In order: time limit reached → question limit reached → no unasked question left → **objectives satisfied** (after at least four
-questions): every topic still in the pool, and every topic asked, has sufficient evidence — two reliable (not low-confidence) scores
-within 3 points of each other, or three answers. Deep-dive ends when the focus topic has ≥ 4 scored answers and no focus questions are
+questions, and only when at least two tagged topics were asked): every topic still in the pool, and every topic asked, has sufficient
+evidence — two reliable (not low-confidence) scores within 3 points of each other, or three scored answers (skips are not evidence).
+An untagged or single-topic pool always runs to its question limit. Deep-dive ends when the focus topic has ≥ 4 scored answers and no focus questions are
 left. The reason is stored (`end_reason`) and shown in the report.
 
 ## Follow-ups
@@ -76,7 +79,9 @@ feedback → … → done`), with compare-and-set on `(status, phase, current tu
 - duplicate or stale submissions get HTTP 409 and change nothing;
 - after a restart, an interview stuck in `evaluating` becomes `evaluation_failed` with the answer intact; the pool, level and decision
   log are in the database (`interview_pool`, `interviews.adaptive_json`, `adaptive_events`);
-- paused time does not count toward the time limit (`paused_seconds`).
+- paused time does not count toward the time limit (`paused_seconds`); time spent waiting for grading **does** count (the limit is
+  wall-clock interview time), and the limit is checked when the next question would start. The feedback screen's "Next question"
+  is a prediction; if the limit passes before you press it, the interview ends instead.
 
 ## What is stored
 

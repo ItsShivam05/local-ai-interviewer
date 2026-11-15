@@ -227,3 +227,34 @@ def test_followup_loop_guard_stops_probing_that_adds_nothing():
 
 def test_duplicate_followup_is_suppressed():
     assert not fu(gap_question="Explain joins.").ask
+
+
+def test_reversal_needs_more_evidence_than_a_continuation():
+    """Fable's case: strong on medium, weak on hard. The level must not flip every two questions."""
+    p, hist, st = pool() * 3, [], ad.EngineState(level=1)
+    for i, q in enumerate(p):
+        q.id, q.order = i, i
+    s = ad.Settings(strategy="mixed", max_questions=16)
+    for i in range(16):
+        if i:
+            st = ad.record_finished(st)
+        d, st = ad.decide_next(pool=[q for q in p if q.text not in {h.text for h in hist}] or p, history=hist, state=st, settings=s)
+        if d.action == "end":
+            break
+        q = next(x for x in p if x.id == d.pool_id)
+        hist.append(asked(q, 8.5 if q.difficulty != "hard" else 4.0))
+    flips = sum(1 for a, b in zip(st.level_history, st.level_history[1:]) if (a["to"] > a["from"]) != (b["to"] > b["from"]))
+    assert len(st.level_history) <= 3 and flips <= 1
+
+
+def test_untagged_pool_never_ends_early_on_objectives():
+    words = ["caching", "sharding", "hashing", "queues", "retries", "logging", "tracing", "batching", "indexing", "pooling"]
+    p = [ad.PoolQ(i, i, f"Explain {w} in depth", None, "medium") for i, w in enumerate(words)]
+    hist = [asked(q, 8) for q in p[:5]]
+    d, _ = ad.decide_next(pool=p[5:], history=hist, state=ad.EngineState(scored_since_change=1), settings=ad.Settings(max_questions=10))
+    assert d.action == "ask"
+
+
+def test_templated_but_different_questions_are_not_duplicates():
+    assert not ad._similar("When would you use caching in a backend?", "When would you use sharding in a backend?")
+    assert ad._similar("What is a primary key in SQL?", "what is a PRIMARY KEY in sql")
