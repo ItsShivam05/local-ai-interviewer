@@ -13,6 +13,7 @@ import { estimateInterviewCost, fmtUsd } from "../aiHelpers";
 import { describeTopics } from "../practice";
 import { LEVELS, LEVEL_LABEL, STRATEGIES, levelLabel, minutesLabel, resumeStrategyAvailable, strategyLabel } from "../intel";
 import { openSettings } from "../settingsTab";
+import { PRESET_IDS, PRESET_INFO, activePreset, presetDisabledReason, presetPlan, type PresetId } from "../presets";
 import { shortVoiceName, useSpeaker, useSystemVoices } from "./useSpeaker";
 
 const KEY = "lai.setup";
@@ -79,6 +80,9 @@ export default function Setup() {
   const [showPre, setShowPre] = useState(true);
   const [qsearch, setQsearch] = useState("");
   const [vsearch, setVsearch] = useState("");
+  const [voiceOpen, setVoiceOpen] = useState(false);       // the searchable voice list is folded away until "Change voice"
+  const [presetNote, setPresetNote] = useState<string | null>(null);
+  const changeVoiceBtn = useRef<HTMLButtonElement>(null);
   const [busy, setBusy] = useState(false);
   const speech = useSpeaker();
   const isSystem = voices.data?.engine === "system";            // no Phonon here: use this computer's offline voices
@@ -102,7 +106,7 @@ export default function Setup() {
   useEffect(() => {   // bring the chosen voice into view inside the scrollable grid
     const g = vgrid.current; const el = g?.querySelector<HTMLElement>("[aria-checked=true]");
     if (g && el && !vsearch) g.scrollTop = Math.max(0, el.offsetTop - g.offsetTop - 8);
-  }, [voices.data, sysVoices, cfg.voice === "" ]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [voices.data, sysVoices, voiceOpen]); // eslint-disable-line react-hooks/exhaustive-deps
   const titleTouched = useRef(false);
   const set = <K extends keyof InterviewConfig>(k: K, v: InterviewConfig[K]) => { if (k === "title") titleTouched.current = true; setCfg((c) => ({ ...c, [k]: v })); };
   useEffect(() => { const n = hist.data?.length; if (n !== undefined && !titleTouched.current) setCfg((c) => ({ ...c, title: `Practice Interview - ${n + 1}` })); }, [hist.data]);
@@ -128,6 +132,25 @@ export default function Setup() {
   const estShown = cfg.time_limit_minutes ? Math.min(estMin, cfg.time_limit_minutes) : estMin;
   const voiceList = (voices.data ? voiceItems : [{ id: cfg.voice, label: cfg.voice, full: cfg.voice }]).filter((v) => v.full.toLowerCase().includes(vsearch.trim().toLowerCase()));
   const voiceLabel = voiceItems.find((v) => v.id === cfg.voice)?.label ?? cfg.voice;
+  const voiceFull = voiceItems.find((v) => v.id === cfg.voice)?.full ?? cfg.voice;
+  const chooseVoice = (id: string) => { set("voice", id); closeVoices(); };
+  function closeVoices() { setVoiceOpen(false); setVsearch(""); requestAnimationFrame(() => changeVoiceBtn.current?.focus()); }
+
+  // presets: one click fills the settings below; the card stays marked only while the form still matches it
+  const bankIds = useMemo(() => [...questions].sort((a, b) => a.position - b.position).map((q) => q.id), [questions]);
+  const presetCtx = { bankIds, resumeId: ready.length ? autoId : null };
+  const activeId = activePreset({ cfg, source, selectMode: mode, selectedIds: [...selected], autoOn }, presetCtx);
+  const applyPreset = (id: PresetId) => {
+    const plan = presetPlan(id, presetCtx);
+    if (!plan) return;
+    setCfg((c) => ({ ...c, ...plan.cfg }));
+    if (plan.source) setSource(plan.source);
+    if (plan.selectMode) setMode(plan.selectMode);
+    if (plan.selectedIds) setSelected(new Set(plan.selectedIds)); else if (plan.selectMode === "all") setSelected(new Set(questions.map((q) => q.id)));
+    if (plan.auto) setAuto((a) => ({ ...a, on: plan.auto!.on, id: plan.auto!.id ?? a.id }));
+    setShowPre(false);
+    setPresetNote(`${PRESET_INFO[id].title} applied.${plan.note ? ` ${plan.note}` : ""} Fine-tune anything below.`);
+  };
   const shownQs = questions.filter((q) => `${q.text} ${q.topic ?? ""}`.toLowerCase().includes(qsearch.trim().toLowerCase()));
 
   const previewVoice = (v: string) => {
@@ -195,6 +218,15 @@ export default function Setup() {
 
       <div className="setup-grid">
         <div className="setup-wrap"><div className="setup-main">
+        <section className="setup-presets" aria-labelledby="presets-h" data-testid="presets">
+          <div className="presets-h"><h2 id="presets-h">Start from a preset</h2><span className="muted small">Fills in the settings below. You can still change anything.</span></div>
+          <OptionCards label="Interview preset" value={(activeId ?? "") as PresetId | ""} onChange={(v) => { if (v) applyPreset(v); }}
+            options={PRESET_IDS.map((id) => {
+              const why = presetDisabledReason(id, presetCtx, (resumes.data?.length ?? 0) > 0);
+              return { value: id, title: PRESET_INFO[id].title, desc: why ?? PRESET_INFO[id].desc, icon: PRESET_INFO[id].icon, disabled: !!why || (id !== "resume" && qs.loading) };
+            })} />
+          {activeId && presetNote && <p className="hint presets-note" role="status">{presetNote}</p>}
+        </section>
           <div className="setup-col">
           <Section step={1} icon="sparkle" title="Basics" desc="Name your session and choose the kind of interview">
             <div className="fld"><div className="lbl"><label htmlFor="title">Interview title</label></div>
@@ -322,23 +354,34 @@ export default function Setup() {
           </Section>
 
                     <Section step={4} icon="voice" title="Interviewer" desc="Choose the voice and how much the interviewer probes">
-            <div className="fld"><div className="lbl">Voice<small>{!voices.data ? "" : isSystem ? `${sysVoices === null ? "…" : sysVoices.length} offline voices on this computer · press ▶ to hear one` : `Phonon · ${voices.data.voices.length} voices · press ▶ to hear one`}</small></div>
-              <div className="vsearch"><Icon name="search" /><input type="search" aria-label="Search voices" placeholder="Search voices…" value={vsearch} onChange={(e) => setVsearch(e.target.value)} /></div>
-              <div className="vgrid" role="radiogroup" aria-label="Voice" ref={vgrid}>
-                {!voices.data && !voices.error && [0, 1, 2, 3, 4, 5].map((i) => <span key={`sk${i}`} className="skel" style={{ height: 44 }} aria-hidden />)}
-                {voiceList.map((v) => {
-                  const playing = speech.key === `vp-${v.id}` && speech.status !== "idle";
-                  return (
-                    <div key={v.id} role="radio" aria-checked={cfg.voice === v.id} tabIndex={0} className={`vchip ${cfg.voice === v.id ? "on" : ""}`} onClick={() => set("voice", v.id)}
-                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); set("voice", v.id); } }}>
-                      <span className="vn" title={v.full}>{v.label}</span>
-                      <button className="vplay" aria-label={`Preview voice ${v.label}`} title={playing ? "Stop" : "Preview"} onClick={(e) => { e.stopPropagation(); previewVoice(v.id); }}>
-                        {speech.key === `vp-${v.id}` && speech.status === "loading" ? <span className="spinner" style={{ width: 12, height: 12, borderWidth: 2 }} /> : playing ? <Stop /> : <Icon name="vol" size={15} />}</button>
-                    </div>
-                  );
-                })}
-                {voiceList.length === 0 && <div className="muted small">No voice matches “{vsearch}”.</div>}
+            <div className="fld"><div className="lbl">Voice<small>{!voices.data ? "" : isSystem ? `${sysVoices === null ? "…" : sysVoices.length} offline voices on this computer` : `Phonon · ${voices.data.voices.length} voices`}</small></div>
+              <div className="vcur" data-testid="voice-current">
+                <span className="vcur-ic" aria-hidden="true"><Icon name="voice" /></span>
+                <div className="vcur-t"><span className="vcur-k">Chosen voice</span><b>{voices.data ? voiceFull : <span className="skel" style={{ display: "inline-block", width: 120, height: 16 }} aria-hidden />}</b></div>
+                <button type="button" className="vplay" disabled={!voices.data} aria-label={`Preview voice ${voiceFull}`} title={speech.key === `vp-${cfg.voice}` && speech.status !== "idle" ? "Stop" : "Preview"} onClick={() => previewVoice(cfg.voice)}>
+                  {speech.key === `vp-${cfg.voice}` && speech.status === "loading" ? <span className="spinner" style={{ width: 12, height: 12, borderWidth: 2 }} /> : speech.key === `vp-${cfg.voice}` && speech.status !== "idle" ? <Stop /> : <Icon name="vol" size={15} />}</button>
+                <button type="button" ref={changeVoiceBtn} className="btn" aria-expanded={voiceOpen} aria-controls="voice-panel" disabled={!voices.data} onClick={() => (voiceOpen ? closeVoices() : setVoiceOpen(true))}>{voiceOpen ? "Hide voices" : "Change voice"}</button>
               </div>
+              {voiceOpen && (
+                <div id="voice-panel" className="vpanel" onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); closeVoices(); } }}>
+                  <div className="vsearch"><Icon name="search" /><input type="search" aria-label="Search voices" placeholder="Search voices…" value={vsearch} autoFocus onChange={(e) => setVsearch(e.target.value)} /></div>
+                  <div className="vgrid" role="radiogroup" aria-label="Voice" ref={vgrid}>
+                    {voiceList.map((v) => {
+                      const playing = speech.key === `vp-${v.id}` && speech.status !== "idle";
+                      return (
+                        <div key={v.id} role="radio" aria-checked={cfg.voice === v.id} aria-label={v.full} title={v.full} tabIndex={0} className={`vchip ${cfg.voice === v.id ? "on" : ""}`} onClick={() => chooseVoice(v.id)}
+                          onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); chooseVoice(v.id); } }}>
+                          <span className="vn">{v.label}</span>
+                          <button className="vplay" aria-label={`Preview voice ${v.full}`} title={playing ? "Stop" : "Preview"} onClick={(e) => { e.stopPropagation(); previewVoice(v.id); }}>
+                            {speech.key === `vp-${v.id}` && speech.status === "loading" ? <span className="spinner" style={{ width: 12, height: 12, borderWidth: 2 }} /> : playing ? <Stop /> : <Icon name="vol" size={15} />}</button>
+                        </div>
+                      );
+                    })}
+                    {voiceList.length === 0 && <div className="muted small">No voice matches “{vsearch}”.</div>}
+                  </div>
+                  <div className="hint">Press ▶ on any voice to hear it, or choose it to use it.</div>
+                </div>
+              )}
               {isSystem && sysVoices !== null && sysVoices.length === 0 && <div className="notice info small" style={{ marginTop: 8 }}>No offline voice was found, so questions will be shown as text only. Windows: Settings → Time &amp; language → Speech → Add voices. Linux: install <b>speech-dispatcher</b> and <b>espeak-ng</b>. Chrome’s online “Google” voices are never used.</div>}
               {voices.error && <div className="hint" style={{ color: "var(--bad)" }}>{voices.error}</div>}
               {speech.key?.startsWith("vp-") && speech.error && <div className="hint" style={{ color: "var(--bad)" }}>{speech.error}</div>}

@@ -61,6 +61,7 @@ try {
   await page.waitForFunction(() => !document.querySelector('[data-testid="active-interview"]'), { timeout: 10000 });
   check((await api(`/api/interviews/${first}`)).body.status === "ended" && !(await page.$eval(".summary .btn.primary.big", (b) => b.disabled)), "ending removes the bar and re-enables Start Interview");
 
+  await page.waitForFunction(() => !document.querySelector(".toast"), { timeout: 10000 });     // the "was ended" toast sits bottom-right and can cover the Start button for a few seconds (when memory is low the summary grows a notice and pushes the button down there)
   await clickText(page, "button", "Start Interview");
   await page.waitForSelector("#answer", { timeout: 20000 });
   const second = Number((await page.evaluate(() => location.hash)).split("/").pop());

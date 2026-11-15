@@ -63,7 +63,7 @@ export interface InterviewState {
   };
   next_action: "followup" | "next_question" | "finish" | null; has_report: boolean;
 }
-export interface HistoryRow { id: number; title: string; interview_type: string; status: string; phase: string; created_at: string; updated_at: string; completed_at: string | null; total: number; answered: number; skipped: number; has_report: number; average_score: number | null }
+export interface HistoryRow { id: number; title: string; interview_type: string; status: string; phase: string; created_at: string; updated_at: string; completed_at: string | null; total: number; answered: number; skipped: number; has_report: number; average_score: number | null; planned?: boolean }   // planned: a running adaptive interview (total = planned questions)
 
 export interface ReportTurn { seq: number; kind: string; question: string; answer: string | null; source: string | null; status: string; score: number | null; evaluation: Evaluation | null }
 export interface ReportQuestion { position: number; text: string; topic: string | null; difficulty: string | null; status: string; score: number | null; verdict: string | null; followups_asked: number; turns: ReportTurn[];

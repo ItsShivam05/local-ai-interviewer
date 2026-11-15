@@ -65,3 +65,18 @@ describe("candidate profile helpers", () => {
     expect(yearsLabel(9.24)).toBe("9.2 years"); expect(yearsLabel(1)).toBe("1 year"); expect(yearsLabel(null)).toBe("—");
   });
 });
+
+describe("timeWarning / groupSkills", () => {
+  it("warns at five minutes or less and never without a limit", async () => {
+    const { timeWarning } = await import("../intel");
+    expect(timeWarning(null)).toBe(false); expect(timeWarning(undefined)).toBe(false);
+    expect(timeWarning(301)).toBe(false); expect(timeWarning(300)).toBe(true); expect(timeWarning(0)).toBe(true);
+  });
+  it("groups skills into high, medium and listed-only, leaving out empty groups", async () => {
+    const { groupSkills } = await import("../intel");
+    const s = [{ name: "a", confidence: "low" }, { name: "b", confidence: "high" }, { name: "c", confidence: "medium" }, { name: "d", confidence: "high" }];
+    expect(groupSkills(s).map((g) => [g.label, g.skills.map((x) => x.name)])).toEqual([["High confidence", ["b", "d"]], ["Medium confidence", ["c"]], ["Listed only", ["a"]]]);
+    expect(groupSkills([{ name: "x", confidence: "low" }]).map((g) => g.key)).toEqual(["listed"]);
+    expect(groupSkills([])).toEqual([]);
+  });
+});

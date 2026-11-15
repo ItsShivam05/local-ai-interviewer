@@ -8,6 +8,9 @@ import type { Health, HistoryRow } from "../types";
 import Icon, { type IconName } from "./Icon";
 import Logo from "./Logo";
 
+/** Tall windows show every service; short ones start with the summary only (the panel would otherwise push the menu out of view). */
+const roomyWindow = () => { try { return window.matchMedia("(min-height: 860px)").matches; } catch { return true; } };
+
 const readName = () => { try { return localStorage.getItem("lai.name") ?? ""; } catch { return ""; } };
 
 interface Item { key: string; label: string; icon: IconName; section: string; badge?: number | null; live?: boolean }
@@ -19,6 +22,7 @@ export default function Sidebar({ route, collapsed, onToggle, mobileOpen, onClos
   const [questions, setQuestions] = useState<number | null>(null);
   const [resumes, setResumes] = useState<number | null>(null);
   const [name, setName] = useState(readName);
+  const [svcOpen, setSvcOpen] = useState(roomyWindow);
   const sysVoices = useSystemVoices(health?.tts.engine === "system");
   const theme = useTheme();
   const themeLabel = theme.pref === "light" ? "Light" : theme.pref === "dark" ? "Dark" : "Auto";
@@ -69,6 +73,7 @@ export default function Sidebar({ route, collapsed, onToggle, mobileOpen, onClos
     ["Microphone", health.stt.available ? true : null, health.stt.reason ?? health.stt.model],
   ] : [];
   const allOk = !!health && checks.every(([, ok]) => ok !== false);
+  const shownChecks = svcOpen ? checks : checks.filter(([, ok]) => ok === false);      // collapsed: only what needs attention
   const initial = (name || "?").trim().charAt(0).toUpperCase();
 
   return (
@@ -98,9 +103,14 @@ export default function Sidebar({ route, collapsed, onToggle, mobileOpen, onClos
         </nav>
 
         <div className="sb-foot">
-          <div className={`status ${allOk ? "ok" : ""}`} aria-label="Local services" data-tip={allOk ? "All local services ready" : "Check local services"}>
-            <div className="status-title"><span>Local services</span><span className={`sb-pill ${allOk ? "ok" : "bad"}`}>{health ? (allOk ? "All ready" : "Attention") : "…"}</span></div>
-            {checks.map(([n, ok, tip]) => <span key={n} title={tip}><span className={`dot ${ok === true ? "ok" : ok === false ? "bad" : "warn"}`} />{n}</span>)}
+          <div className={`status ${allOk ? "ok" : ""} ${svcOpen ? "" : "compact"}`} role="group" aria-label="Local services" data-tip={allOk ? "All local services ready" : "Check local services"}>
+            <button type="button" className="status-title" aria-expanded={svcOpen} aria-controls="svc-list" onClick={() => setSvcOpen((o) => !o)} title={svcOpen ? "Hide the list of services" : "Show the list of services"}>
+              <span>Local services</span>
+              <span className="status-end"><span className={`sb-pill ${allOk ? "ok" : "bad"}`}>{health ? (allOk ? "All ready" : "Attention") : "…"}</span><Icon name="chevl" className="status-chev" /></span>
+            </button>
+            <div id="svc-list" className="status-list">
+              {shownChecks.map(([n, ok, tip]) => <span key={n} title={tip}><span className={`dot ${ok === true ? "ok" : ok === false ? "bad" : "warn"}`} />{n}</span>)}
+            </div>
             <span className="sb-dot-only"><span className={`dot ${health ? (allOk ? "ok" : "bad") : "warn"}`} /></span>
           </div>
           <button className="sb-theme" onClick={() => setThemePref(nextPref(theme.pref))} data-tip={`Theme: ${themeLabel}`} aria-label={`Colour theme: ${themeLabel}. Click to change.`} title="Change colour theme">

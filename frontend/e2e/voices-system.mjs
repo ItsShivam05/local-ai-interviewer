@@ -32,8 +32,10 @@ try {
   }
 
   await page.goto(`${BASE}/#/setup`, { waitUntil: "networkidle0" });
-  await page.waitForSelector('[aria-label="Voice"]');
+  await page.waitForSelector('[data-testid="voice-current"]');
   await sleep(800);
+  await clickText(page, "button", "Change voice");                                      // the list is folded until asked for
+  await page.waitForSelector('[aria-label="Voice"]');
   const pageText = await textOf(page);
   check(/offline voices on this computer/.test(pageText) || /No offline voice was found/.test(pageText), "Setup labels the voice list as this computer's offline voices");
   const chips = await page.$$eval('[aria-label="Voice"] [role=radio]', (els) => els.map((e) => e.textContent.trim()));

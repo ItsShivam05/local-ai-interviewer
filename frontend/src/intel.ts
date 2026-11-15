@@ -60,6 +60,10 @@ export function fmtClock(sec: number): string {
   return h ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
+/** In the last five minutes the clock turns to the warning colour (colour only: no blinking). */
+export const TIME_WARNING_S = 300;
+export const timeWarning = (remaining: number | null | undefined): boolean => remaining != null && remaining <= TIME_WARNING_S;
+
 /** Seconds left now, counted down from the value the server sent `receivedAt` ms ago. null = no time limit. */
 export function remainingNow(remaining_s: number | null | undefined, receivedAt: number, now: number): number | null {
   if (remaining_s == null) return null;
@@ -103,6 +107,14 @@ export const resumeStrategyAvailable = (resumeQuestionCount: number, autoOn: boo
 export const SOURCE_LABEL: Record<string, string> = { verified: "found in the text", partial: "partly found", not_found: "not found in the text", unknown: "not checked" };
 export const SOURCE_TONE: Record<string, "ok" | "warn" | "bad" | ""> = { verified: "ok", partial: "warn", not_found: "bad", unknown: "" };
 export const sourceLabel = (s: string | null | undefined) => SOURCE_LABEL[s ?? "unknown"] ?? "not checked";
+export type SkillGroupKey = "high" | "medium" | "listed";
+export const SKILL_GROUP_LABEL: Record<SkillGroupKey, string> = { high: "High confidence", medium: "Medium confidence", listed: "Listed only" };
+/** Candidate skills by how well the resume backs them up: high (listed and used), medium (used, not listed), listed only (low). Empty groups are left out. */
+export function groupSkills<T extends { confidence: string }>(skills: T[]): { key: SkillGroupKey; label: string; skills: T[] }[] {
+  const of = (k: SkillGroupKey) => skills.filter((s) => (k === "high" ? s.confidence === "high" : k === "medium" ? s.confidence === "medium" : s.confidence !== "high" && s.confidence !== "medium"));
+  return (["high", "medium", "listed"] as const).map((key) => ({ key, label: SKILL_GROUP_LABEL[key], skills: of(key) })).filter((g) => g.skills.length > 0);
+}
+
 export const CONFIDENCE_TONE: Record<string, "ok" | "blue" | "warn"> = { high: "ok", medium: "blue", low: "warn" };
 /** "Resume > Experience > Data Engineer, line 5" style reference. */
 export const sourceRef = (s: { section?: string; label?: string; line?: number | null }) =>

@@ -7,6 +7,7 @@ import { ErrorNotice, fmtShort, minutesBetween, scoreClass, useAsync, useToast }
 import { setIntent } from "../intent";
 import { openSettings } from "../settingsTab";
 import { describeTopics, missingTopics, pickPreselect, topicName, type WeakTopic } from "../practice";
+import { MAX_WEAK_TARGETS, WEAK_BELOW, pickNextStep, topicNames, weakTopics } from "../nextStep";
 import type { HistoryRow, Stats } from "../types";
 
 export const getName = () => { try { return localStorage.getItem("lai.name") ?? ""; } catch { return ""; } };
@@ -34,7 +35,6 @@ export function InterviewRow({ r, actions }: { r: HistoryRow; actions?: React.Re
 
 const NAME_KEY = "lai.name";
 const saveName = (v: string) => { try { localStorage.setItem(NAME_KEY, v); } catch { /* ignore */ } window.dispatchEvent(new Event("lai:name")); };
-const WEAK_BELOW = 7;
 
 function Kpis({ s }: { s: Stats }) {
   const has = s.average_score != null;
@@ -54,15 +54,11 @@ function Kpis({ s }: { s: Stats }) {
   );
 }
 
-function Progress({ s }: { s: Stats }) {
+/** "Practise my weakest topics": preselect their questions in the interview setup, or say exactly which topics have no questions. */
+function usePractice() {
   const toast = useToast();
   const [missing, setMissing] = useState<WeakTopic[] | null>(null);
   const [busy, setBusy] = useState(false);
-  const weak: WeakTopic[] = s.topics.filter((t) => t.average_score < WEAK_BELOW).map((t) => ({ topic: t.topic, untagged: t.untagged }));
-  const targets = weak.slice(0, 3);
-  const onlyUntagged = s.topics.length > 0 && s.topics.every((t) => t.untagged);
-
-  /** Preselect the questions of these topics in the interview setup, or say exactly which topics have no questions. */
   const practice = async (topics: WeakTopic[]) => {
     setBusy(true); setMissing(null);
     try {
@@ -73,7 +69,48 @@ function Progress({ s }: { s: Stats }) {
       window.location.hash = "#/setup";
     } catch (e) { toast("error", (e as Error).message); } finally { setBusy(false); }
   };
-  const addQuestionFor = (t: WeakTopic) => { setIntent(t.untagged ? { type: "add" } : { type: "add", topic: t.topic }); window.location.hash = "#/questions"; };
+  return { practice, busy, missing };
+}
+const addQuestionFor = (t: WeakTopic) => { setIntent(t.untagged ? { type: "add" } : { type: "add", topic: t.topic }); window.location.hash = "#/questions"; };
+function MissingNotice({ missing }: { missing: WeakTopic[] }) {
+  return (
+    <div className="notice warn small" role="alert" style={{ marginBottom: 0 }}>
+      <b>Nothing to practice yet.</b> Your Question Bank has no {describeTopics(missing)}. {missing.some((m) => !m.untagged) ? "Add a question with that topic and try again." : "Add a question first."}
+      <div className="row" style={{ marginTop: 8 }}>{missing.slice(0, 2).map((m) => <button key={m.topic} className="btn" onClick={() => addQuestionFor(m)}><Icon name="plus" />Add {m.untagged ? "a question" : `a “${m.topic}” question`}</button>)}</div>
+    </div>
+  );
+}
+
+/** One obvious thing to do next. Replaces nothing else on the page: it is the only place the unfinished interview is announced. */
+function NextStepCard({ rows, stats }: { rows: HistoryRow[] | null; stats: Stats | null }) {
+  const { practice, busy, missing } = usePractice();
+  const step = pickNextStep(rows, stats);
+  if (!step) return null;
+  const body = step.kind === "continue"
+    ? { icon: "mic" as const, title: `Continue ${step.row.title}`, sub: `Question ${step.question} of ${step.row.planned ? "up to " : ""}${step.total} · ${step.row.status === "paused" ? "paused" : "in progress"}`,
+        action: <a className="btn primary" href={`#/interview/${step.row.id}`}>Continue interview<Icon name="arrowr" /></a> }
+    : step.kind === "practice"
+      ? { icon: "target" as const, title: `Practise your weakest topics: ${topicNames(step.targets)}`,
+          sub: `Preselects your ${describeTopics(step.targets)} in the interview setup${step.weak.length > step.targets.length ? ` (the ${step.targets.length} weakest of ${step.weak.length})` : ""}.`,
+          action: <button className="btn primary" disabled={busy} onClick={() => void practice(step.targets)}>Practise now<Icon name="arrowr" /></button> }
+      : step.kind === "first"
+        ? { icon: "mic" as const, title: "Start your first interview", sub: "Set one up in a minute. Your scores and progress appear here afterwards.", action: <a className="btn primary" href="#/setup">Start interview<Icon name="arrowr" /></a> }
+        : { icon: "mic" as const, title: "Start another interview", sub: "Every topic is at 7 or above. Keep the momentum going with a new round.", action: <a className="btn primary" href="#/setup">Start interview<Icon name="arrowr" /></a> };
+  return (
+    <section className="nextstep" aria-labelledby="nextstep-h" data-testid="next-step" data-kind={step.kind}>
+      <span className="ns-ic" aria-hidden="true"><Icon name={body.icon} /></span>
+      <div className="ns-t"><span className="ns-k">Next step</span><h2 id="nextstep-h">{body.title}</h2><p>{body.sub}</p></div>
+      <div className="ns-go">{body.action}</div>
+      {missing && <div className="ns-missing"><MissingNotice missing={missing} /></div>}
+    </section>
+  );
+}
+
+function Progress({ s }: { s: Stats }) {
+  const { practice, busy, missing } = usePractice();
+  const weak = weakTopics(s);
+  const targets = weak.slice(0, MAX_WEAK_TARGETS);
+  const onlyUntagged = s.topics.length > 0 && s.topics.every((t) => t.untagged);
   const latest = s.trend[s.trend.length - 1];
   return (
     <>
@@ -111,12 +148,7 @@ function Progress({ s }: { s: Stats }) {
                     <div className="muted small focus-note">Will preselect your {describeTopics(targets)}{weak.length > targets.length ? ` (the ${targets.length} weakest of ${weak.length})` : ""} in the interview setup.</div>
                   </>
                 ) : <div className="notice ok" style={{ margin: 0 }}>Every topic is at {WEAK_BELOW}+ — nice. Add harder questions to keep growing.</div>}
-                {missing && (
-                  <div className="notice warn small" role="alert" style={{ marginBottom: 0 }}>
-                    <b>Nothing to practice yet.</b> Your Question Bank has no {describeTopics(missing)}. {missing.some((m) => !m.untagged) ? "Add a question with that topic and try again." : "Add a question first."}
-                    <div className="row" style={{ marginTop: 8 }}>{missing.slice(0, 2).map((m) => <button key={m.topic} className="btn" onClick={() => addQuestionFor(m)}><Icon name="plus" />Add {m.untagged ? "a question" : `a “${m.topic}” question`}</button>)}</div>
-                  </div>
-                )}
+                {missing && <MissingNotice missing={missing} />}
               </div>
             </>
           ) : <div className="nodata"><div className="ei"><Icon name="target" /></div>Topics you should revisit show up here. Give your questions a topic to get a breakdown.</div>}
@@ -167,6 +199,7 @@ export default function Home() {
       {problem && <div className="notice error" style={{ marginTop: 14 }}><b>Setup needed:</b> {problem}{" "}
         {(cloud || localProblem) && <button className="linkbtn" onClick={() => openSettings("ai")}>{cloud ? "Open AI settings" : "Use Ollama cloud instead"}</button>}</div>}
       <ErrorNotice error={sets.error || hist.error} />
+      {!hist.error && (hist.data || !hist.loading) && (stats.data || !stats.loading) && <NextStepCard rows={hist.data} stats={stats.data} />}
 
       <div className="cards3">
         <a className="tile" href="#/questions"><div className="ico"><Icon name="doc" size={26} /></div><div><b>Question Bank</b><span className="sub">{total} Question{total === 1 ? "" : "s"}<br />Create and manage your questions</span></div></a>

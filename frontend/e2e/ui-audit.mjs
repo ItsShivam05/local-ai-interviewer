@@ -74,6 +74,7 @@ try {
     for (const [name, hash] of PAGES) {
       await page.goto(`${BASE}/${hash}`, { waitUntil: "networkidle0" });
       await sleep(550);
+      if (name === "report") { await page.evaluate(() => [...document.querySelectorAll('[role="tab"]')].find((b) => b.textContent.trim() === "Overview")?.click()); await sleep(250); }   // the chosen tab is remembered: start from Overview
       const ov = await overflow(page);
       const low = await page.evaluate(AUDIT);
       total += low.length;
@@ -81,6 +82,25 @@ try {
       check(ov.doc <= 1, `[${theme}] ${name}: no horizontal overflow`);
       check(low.length === 0, `[${theme}] ${name}: text contrast AA${low.length ? " — " + low.slice(0, 6).join(" | ") : ""}`);
       await shot(page, `audit-${theme}-${name}`);
+      if (name === "report") {          // the report is split into tabs: audit every one of them too, and the Setup voice list once opened
+        for (const tab of ["Questions", "Skills & progress"]) {
+          await page.evaluate((t) => [...document.querySelectorAll('[role="tab"]')].find((b) => b.textContent.trim() === t)?.click(), tab); await sleep(300);
+          const lowTab = await page.evaluate(AUDIT); total += lowTab.length;
+          lowTab.forEach((f) => unique.set(`[${theme}] ${f}`, [...(unique.get(`[${theme}] ${f}`) ?? []), `${name}/${tab}`]));
+          check(lowTab.length === 0, `[${theme}] ${name} › ${tab}: text contrast AA${lowTab.length ? " — " + lowTab.slice(0, 6).join(" | ") : ""}`);
+          check((await overflow(page)).doc <= 1, `[${theme}] ${name} › ${tab}: no horizontal overflow`);
+        }
+      }
+      if (name === "setup") {
+        await page.evaluate(() => [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Change voice")?.click()); await sleep(300);
+        const lowV = await page.evaluate(AUDIT); total += lowV.length;
+        lowV.forEach((f) => unique.set(`[${theme}] ${f}`, [...(unique.get(`[${theme}] ${f}`) ?? []), "setup/voices"]));
+        check(lowV.length === 0, `[${theme}] setup with the voice list open: text contrast AA${lowV.length ? " — " + lowV.slice(0, 6).join(" | ") : ""}`);
+        await page.evaluate(() => { [...document.querySelectorAll(".ocard")].find((b) => /Full mock/.test(b.textContent))?.click(); }); await sleep(300);
+        const lowP = await page.evaluate(AUDIT); total += lowP.length;
+        lowP.forEach((f) => unique.set(`[${theme}] ${f}`, [...(unique.get(`[${theme}] ${f}`) ?? []), "setup/preset"]));
+        check(lowP.length === 0, `[${theme}] setup with a preset applied: text contrast AA${lowP.length ? " — " + lowP.slice(0, 6).join(" | ") : ""}`);
+      }
     }
   }
   reportIssues(issues);

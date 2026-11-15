@@ -122,10 +122,15 @@ try {
   }
   await waitText(page, "Interview complete", 30000);
   await clickText(page, "a", "View the full report");
-  await page.waitForSelector('[data-testid="resume-claims"]', { timeout: 20000 });
+  await page.waitForSelector('[role="tab"]', { timeout: 20000 });
+  await clickText(page, '[role="tab"]', "Adaptive", { exact: true });                  // resume claims live on the report's Adaptive tab
+  await page.waitForSelector('[data-testid="resume-claims"]', { visible: true, timeout: 20000 });
   const claims = await textOf(page, '[data-testid="resume-claims"]');
   check(claims.includes("Resume claims") && /Solid|Shaky|Weak/.test(claims) && /Resume \d/.test(claims), "the report shows Resume claims with verdict pills");
+  await clickText(page, '[role="tab"]', "Questions", { exact: true });                 // the per-question details are on the Questions tab
+  await page.waitForSelector(".rz-resume-chip", { visible: true, timeout: 5000 });
   check((await textOf(page)).includes("Resume"), "resume-sourced questions carry a Resume tag in the report");
+  await clickText(page, '[role="tab"]', "Adaptive", { exact: true });
   await shot(page, "report-resume-claims");
   const md = await (await fetch(`${BASE}/api/interviews/1/report/export?format=md`)).text();
   check(md.includes("## Resume claims"), "the Markdown export includes Resume claims");

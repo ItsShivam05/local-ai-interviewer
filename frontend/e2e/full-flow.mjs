@@ -21,6 +21,7 @@ try {
   await post("/api/sets/1/questions", { text: "What is a slowly changing dimension type 2?", topic: "Data modeling", difficulty: "easy" });
 
   await page.goto(`${BASE}/#/setup`, { waitUntil: "networkidle0" });
+  await clickText(page, "button", "Change voice");                                      // the voice list is folded until asked for
   await page.waitForFunction(() => document.querySelectorAll(".vchip").length > 30);
   await page.click('[aria-label="Max follow-ups: 2"]');
   await clickText(page, "button", "Start Interview");
@@ -69,6 +70,8 @@ try {
   await shot(page, "full-report");
   const rep = await textOf(page);
   check(rep.includes("Skipped") && rep.includes("Total Questions"), "report shows the storyboard stat cards incl. Skipped");
+  await clickText(page, "[role=tab]", "Questions", { exact: true });          // the scorecard lives on the report's Questions tab
+  await page.waitForSelector('[data-testid="scorecard"]', { visible: true });
   const rows = await page.$$eval('[data-testid="scorecard"] .sc-row', (r) => r.map((x) => x.innerText.replace(/\s+/g, " ")));
   check(rows.length === 3 && /Answer \d/.test(rows[0]) && /Skipped/.test(rows[1]) && /Answer \d/.test(rows[2]), `the scorecard lists every question with its answer score (${rows.map((x) => x.slice(0, 50)).join(" | ")})`);
   const q1chips = await page.$$eval('[data-testid="scorecard"] .sc-row:first-child .sc-chip', (c) => c.length);

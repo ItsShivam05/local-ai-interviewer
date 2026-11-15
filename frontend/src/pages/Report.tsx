@@ -1,16 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import { speaker } from "../audio";
 import Feedback from "../components/Feedback";
 import { Scorecard, Skills } from "../components/Scorecard";
-import ReportIntel from "../components/ReportIntel";
+import ReportIntel, { hasLearningPlan, hasSkillsContent } from "../components/ReportIntel";
 import { fmtUsd } from "../aiHelpers";
 import { ScoreRing, scoreTone } from "../components/charts";
 import Icon from "../components/Icon";
 import { SkeletonRows } from "../components/Skeleton";
-import { ErrorNotice, Menu, fmtShort, minutesBetween, scoreClass, useAsync, useToast } from "../components/ui";
+import { ErrorNotice, Menu, TabPanel, Tabs, fmtShort, minutesBetween, scoreClass, useAsync, useToast } from "../components/ui";
 import type { Report as ReportT } from "../types";
-import { CLAIM_VERDICT_TONE } from "../resumeHelpers";
+import { TAB_LABEL, readTab, reportTabs, saveTab, type ReportTab } from "../reportTabs";
 import { useSpeaker } from "./useSpeaker";
 
 const List = ({ title, items }: { title: string; items: string[] }) => (
@@ -23,6 +23,10 @@ export default function ReportPage({ id }: { id: number }) {
   const { data: r, error, reload, setData } = useAsync<ReportT>(() => api.report(id), [id]);
   const speech = useSpeaker();
   const pending = r?.narrative_status === "pending";
+  const tabs = useMemo(() => (r ? reportTabs(r) : []), [r]);
+  const [picked, setPicked] = useState<ReportTab | null>(null);           // null until the user picks one: then the remembered tab for this report
+  const tab: ReportTab = r ? (picked && tabs.includes(picked) ? picked : readTab(id, tabs)) : "overview";
+  const pickTab = (t: ReportTab) => { setPicked(t); saveTab(id, t); };
   const [pdf, setPdf] = useState<"idle" | "waiting" | "building">("idle");
   const [redact, setRedact] = useState(false);       // the PDF being prepared is the share-safe copy
   useEffect(() => { if (pdf === "waiting" && r && !pending) setPdf("building"); }, [pdf, pending, r]);      // the written summary is finished first, so it is in the file
@@ -81,6 +85,9 @@ export default function ReportPage({ id }: { id: number }) {
         </div>
       </div>
 
+      <Tabs idBase="rep" label="Report sections" tabs={tabs.map((t) => ({ id: t, label: TAB_LABEL[t] }))} value={tab} onChange={pickTab} />
+
+      <TabPanel idBase="rep" id="overview" active={tab === "overview"}>
       <div className="rep-top">
       <div className="card hero">
         <ScoreRing value={s.average_score} label="average" size={120} />
@@ -106,10 +113,24 @@ export default function ReportPage({ id }: { id: number }) {
           {" · "}<a href="#/usage">details</a>
         </div>
       )}
-      <Scorecard r={r} />
       {s.answered_not_scored > 0 && <div className="notice warn small">{s.answered_not_scored} answered question(s) could not be evaluated and are excluded from averages.</div>}
 
-      <div className="twocol">
+      <div className="card feedback-card">
+        <div className="row between"><h2 style={{ margin: 0 }}>Overall feedback</h2>
+          {pending ? <span className="muted small"><span className="spinner" style={{ width: 12, height: 12, borderWidth: 2 }} /> Writing summary…</span>
+            : <button className="btn ghost no-print" onClick={async () => { try { setData(await api.regenerateReport(id)); } catch (e) { toast("error", (e as Error).message); } }}>Regenerate</button>}</div>
+        <p className="fb-summary">{ins.overall_summary}</p>
+        {r.insights_source === "rules" && !pending && <span className="badge">rule-based</span>}
+        {r.narrative_status === "failed" && <div className="notice warn small">The model couldn’t write the summary ({r.narrative_error}). Showing rule-based insights instead.</div>}
+        <hr className="fb-rule" />
+        <div className="fb-lists">
+          <List title="Strengths" items={ins.strengths} /><List title="Knowledge gaps" items={ins.knowledge_gaps} />
+          <List title="Repeated misconceptions" items={ins.repeated_misconceptions} /><List title="Topics to revise" items={ins.topics_to_revise} />
+        </div>
+        <List title="Recommendations" items={ins.recommendations} />
+      </div>
+
+      <div className={hasLearningPlan(r) ? "twocol twocol-top" : ""}>
         <div className="card">
           <h2>Topic-wise Performance</h2>
           {r.topics.map((t) => (
@@ -121,49 +142,12 @@ export default function ReportPage({ id }: { id: number }) {
           ))}
           <details><summary className="small muted" style={{ cursor: "pointer" }}>How scores are calculated</summary><ul className="tight small muted">{r.scoring_rules.map((x) => <li key={x}>{x}</li>)}</ul></details>
         </div>
-        <div className="card">
-          <div className="row between"><h2>Overall Feedback</h2>
-            {pending ? <span className="muted small"><span className="spinner" style={{ width: 12, height: 12, borderWidth: 2 }} /> Writing summary…</span>
-              : <button className="btn ghost no-print" onClick={async () => { try { setData(await api.regenerateReport(id)); } catch (e) { toast("error", (e as Error).message); } }}>Regenerate</button>}</div>
-          <p style={{ color: "var(--text-2)", lineHeight: 1.6 }}>{ins.overall_summary}</p>
-          {r.insights_source === "rules" && !pending && <span className="badge">rule-based</span>}
-          {r.narrative_status === "failed" && <div className="notice warn small">The model couldn’t write the summary ({r.narrative_error}). Showing rule-based insights instead.</div>}
-        </div>
+        <ReportIntel r={r} part="overview" />
       </div>
+      </TabPanel>
 
-      {r.resume_claims && r.resume_claims.length > 0 && (
-        <div className="card" data-testid="resume-claims">
-          <div className="row between"><h2>Resume claims</h2><span className="muted small">How well you defended what your resume says · weakest first</span></div>
-          <div className="rz-claims">
-            {r.resume_claims.map((c) => (
-              <div className="rz-claim" key={`${c.resume_id}-${c.section}-${c.label}`}>
-                <div className="grow">
-                  <div className="rz-claim-t">{c.label || c.section}</div>
-                  <div className="muted small">{c.resume_name}{c.resume_deleted ? " (deleted resume)" : ""}{c.section ? ` › ${c.section}` : ""} · {c.question_numbers.map((n) => `Q${n}`).join(", ")}</div>
-                  <div className="small rz-tip"><Icon name="target" size={13} />{c.tip}</div>
-                </div>
-                <span className={`mark ${scoreClass(c.average_score)}`}>{c.average_score}</span>
-                <span className={`badge ${CLAIM_VERDICT_TONE[c.verdict] ?? ""} rz-verdict`}>{c.verdict}</span>
-              </div>
-            ))}
-          </div>
-          <p className="muted small" style={{ margin: "8px 0 0" }}>Solid 7+ · Shaky 5–7 · Weak below 5. Skipped and unanswered questions are not counted.</p>
-        </div>
-      )}
-
-      <ReportIntel r={r} />
-
-      {r.skills && <Skills skills={r.skills} />}
-
-      <div className="card">
-        <h2>Insights</h2>
-        <div className="grid2">
-          <List title="Strengths" items={ins.strengths} /><List title="Knowledge gaps" items={ins.knowledge_gaps} />
-          <List title="Repeated misconceptions" items={ins.repeated_misconceptions} /><List title="Topics to revise" items={ins.topics_to_revise} />
-        </div>
-        <List title="Recommendations" items={ins.recommendations} />
-      </div>
-
+      <TabPanel idBase="rep" id="questions" active={tab === "questions"}>
+      <Scorecard r={r} />
       <h2 style={{ marginTop: 22, marginBottom: 4 }}>Detailed feedback</h2>
       <p className="muted small" style={{ margin: "0 0 12px" }}>Open a question to see what you answered, the feedback on it and a reference answer.</p>
       {r.questions.map((q) => (
@@ -191,6 +175,19 @@ export default function ReportPage({ id }: { id: number }) {
           </div>
         </details>
       ))}
+      </TabPanel>
+
+      <TabPanel idBase="rep" id="skills" active={tab === "skills"}>
+        {r.skills && <Skills skills={r.skills} />}
+        <ReportIntel r={r} part="skills" />
+        {!hasSkillsContent(r) && <div className="card muted">Skills and progress appear here once some answers have been graded.</div>}
+      </TabPanel>
+
+      {tabs.includes("adaptive") && (
+        <TabPanel idBase="rep" id="adaptive" active={tab === "adaptive"}>
+          <ReportIntel r={r} part="adaptive" />
+        </TabPanel>
+      )}
     </div>
   );
 }

@@ -1,10 +1,43 @@
 import { useEffect, useState } from "react";
 import { ApiError, resumesApi } from "../api";
-import { CONFIDENCE_TONE, SOURCE_TONE, monthsLabel, sourceLabel, sourceRef, yearsLabel } from "../intel";
-import type { CandidateIntel } from "../types";
+import { CONFIDENCE_TONE, SOURCE_TONE, groupSkills, monthsLabel, sourceLabel, sourceRef, yearsLabel } from "../intel";
+import type { CandidateIntel, CandidateSkill } from "../types";
 import Icon from "./Icon";
 import { CardsSkeleton } from "./Loaders";
 import { fmtShort, scoreClass } from "./ui";
+
+function SkillItem({ s }: { s: CandidateSkill }) {
+  return (
+    <li className="cp-skill">
+      <div className="cp-skill-h"><b>{s.name}</b>{s.category && <span className="badge">{s.category}</span>}
+        <span className={`badge ${CONFIDENCE_TONE[s.confidence] ?? ""}`}>{s.confidence} confidence</span>{s.listed && <span className="muted small">listed</span>}
+        {s.aliases.length > 0 && <span className="muted small">also: {s.aliases.join(", ")}</span>}</div>
+      {s.confidence_reason && <div className="small muted">{s.confidence_reason}</div>}
+      {s.used_in.length > 0 && <div className="small">Used in: {s.used_in.join("; ")}</div>}
+      {s.sources.length > 0 && <div className="cp-src" aria-label={`Where ${s.name} appears`}>{s.sources.map((x, i) => <span key={i} className={`src-${SOURCE_TONE[x.status] || "none"}`}>{sourceRef(x)} · {sourceLabel(x.status)}</span>)}</div>}
+    </li>
+  );
+}
+
+/** Skills in three groups; the first non-empty group (normally "High confidence") starts open, the others folded. */
+function SkillGroups({ skills }: { skills: CandidateSkill[] }) {
+  const groups = groupSkills(skills);
+  const [open, setOpen] = useState<Record<string, boolean>>(() => ({ [groups[0]?.key ?? "high"]: true }));
+  return (
+    <div className="cp-groups">
+      {groups.map((g) => {
+        const on = !!open[g.key];
+        return (
+          <div className="cp-group" key={g.key} data-testid={`cp-group-${g.key}`}>
+            <h3 className="cp-group-h"><button type="button" aria-expanded={on} aria-controls={`cp-g-${g.key}`} onClick={() => setOpen((o) => ({ ...o, [g.key]: !on }))}>
+              <Icon name="chevl" className="cp-chev" /><span>{g.label}</span><span className="cp-count">{g.skills.length}</span></button></h3>
+            <ul className="cp-skills" id={`cp-g-${g.key}`} hidden={!on}>{g.skills.map((s) => <SkillItem key={s.name} s={s} />)}</ul>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 /** Resume detail → Candidate profile: what the interviewer knows about you, built offline from your saved profile. `version` changes when the profile is saved, which refetches. */
 export default function CandidateProfile({ id, version, onEdit }: { id: number; version: string | number; onEdit: () => void }) {
@@ -48,18 +81,7 @@ export default function CandidateProfile({ id, version, onEdit }: { id: number; 
       <section className="card" aria-labelledby="cp-sk">
         <div className="row between"><h2 id="cp-sk" style={{ margin: 0 }}>Skills</h2><span className="muted small">{d.skills.length} found · confidence shows how well your resume backs each one up</span></div>
         {d.skills.length === 0 ? <p className="muted">No skills were found.</p> : (
-          <ul className="cp-skills">
-            {d.skills.map((s) => (
-              <li className="cp-skill" key={s.name}>
-                <div className="cp-skill-h"><b>{s.name}</b>{s.category && <span className="badge">{s.category}</span>}
-                  <span className={`badge ${CONFIDENCE_TONE[s.confidence] ?? ""}`}>{s.confidence} confidence</span>{s.listed && <span className="muted small">listed</span>}
-                  {s.aliases.length > 0 && <span className="muted small">also: {s.aliases.join(", ")}</span>}</div>
-                {s.confidence_reason && <div className="small muted">{s.confidence_reason}</div>}
-                {s.used_in.length > 0 && <div className="small">Used in: {s.used_in.join("; ")}</div>}
-                {s.sources.length > 0 && <div className="cp-src" aria-label={`Where ${s.name} appears`}>{s.sources.map((x, i) => <span key={i} className={`src-${SOURCE_TONE[x.status] || "none"}`}>{sourceRef(x)} · {sourceLabel(x.status)}</span>)}</div>}
-              </li>
-            ))}
-          </ul>
+          <SkillGroups skills={d.skills} />
         )}
       </section>
 

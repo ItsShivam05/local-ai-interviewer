@@ -238,3 +238,16 @@ def test_reviewed_and_offline_resume_questions_are_not_asked_twice(client, conta
                                              "resume_questions": [dup], "resume_auto": {"resume_id": rid, "count": 4}})
     texts = [i["text"] for i in r.json()["items"]]
     assert texts.count(dup["text"]) == 1 and len(texts) == len(set(texts))      # asked once; the offline generator skipped it
+
+
+def test_history_reports_the_planned_total_for_a_running_adaptive_interview(client, set_id, fake):
+    """The dashboard's "Continue: question k of n" must not say "1 of 1" for an adaptive interview that plans more."""
+    bank(client, set_id)
+    st = start(client, set_id, max_questions=4)
+    row = next(r for r in client.get("/api/interviews").json() if r["id"] == st["id"])
+    assert row["total"] == 4 == st["progress"]["total"] and row["planned"] is True
+    fake.chat_replies = [graded(7) for _ in range(4)]
+    for _ in range(4):
+        st = answer(client, st, "An answer").json()
+    row = next(r for r in client.get("/api/interviews").json() if r["id"] == st["id"])
+    assert st["status"] == "completed" and row["total"] == 4 and row["planned"] is False

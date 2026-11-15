@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { fmtClock, levelLabel, remainingNow, strategyLabel } from "../intel";
+import { fmtClock, levelLabel, remainingNow, strategyLabel, timeWarning } from "../intel";
 import type { InterviewState } from "../types";
 import Icon from "./Icon";
 
@@ -23,7 +23,7 @@ export default function RunInfo({ st, remaining }: { st: InterviewState; remaini
   const ad = st.mode === "adaptive" ? st.adaptive : null;
   const item = st.current?.item;
   if (!ad && remaining == null) return null;
-  const low = remaining != null && remaining <= 60;
+  const warn = timeWarning(remaining);
   return (
     <div className="runinfo" data-testid="runinfo" role="group" aria-label="Interview details">
       {ad && <>
@@ -32,12 +32,12 @@ export default function RunInfo({ st, remaining }: { st: InterviewState; remaini
         <span className="ri"><span className="k">Strategy</span><b>{strategyLabel(ad.strategy)}</b>{ad.strategy === "deep_dive" && ad.focus_topic && <span className="muted"> · {ad.focus_topic}</span>}</span>
       </>}
       {remaining != null && (
-        <span className={`ri time ${low ? "low" : ""}`} title="No new question starts after the time limit">
+        <span className={`ri time ${warn ? "warn" : ""}`} title="No new question starts after the time limit">
           <Icon name="hourglass" size={14} /><span className="k">Time left</span>
           <b role="timer" aria-label={`Time left ${fmtClock(remaining)}`}>{fmtClock(remaining)}</b>
         </span>
       )}
-      {remaining === 0 && <span className="ri muted">Time is up: finish this answer; no new question will start.</span>}
+      {remaining === 0 && <span className="ri timeup">Time is up: finish this answer; no new question will start.</span>}
     </div>
   );
 }

@@ -8,6 +8,15 @@ No version has been tagged or released on GitHub yet.
 
 Planned as 2.0.0 (database schema v6; scores of categorised questions change, see *Changed*).
 
+### Interface
+- Setup: one-click presets (Quick practice, Full mock, Resume round) that fill the settings below; the voice picker shows the chosen
+  voice and opens the full list only on "Change voice" (names no longer cut off).
+- Report: organised into tabs (Overview, Questions, Skills & progress, Adaptive); "Overall feedback" and "Insights" merged into one
+  card; the selected tab survives a reload; on phones every tab stays visible.
+- Home: a "Next step" card (continue the interview in progress, practise your weakest topics, or start the first interview).
+- Interview: more space around "Why this question"; "Time left" turns amber in the last five minutes.
+- Candidate profile: skills grouped by confidence (high open, medium and listed-only folded).
+
 ### Project infrastructure
 - CI rebuilt: lint/docs job, backend tests on macOS/Windows/Linux (Python 3.12) plus Ubuntu on Python 3.10, frontend checks on all three
   systems, launcher smoke test; actions pinned to commit SHAs, least-privilege permissions, cancelled duplicate runs, dependency caching.
@@ -20,6 +29,9 @@ Planned as 2.0.0 (database schema v6; scores of categorised questions change, se
   issue forms, pull request template, governance and developer documentation, real screenshots and a social preview image.
 
 ### Fixed
+- The sidebar's last links were hidden behind the Local services panel on shorter windows (e.g. 1280×820); the menu now scrolls on
+  its own and the panel folds when space is short.
+- A running adaptive interview showed "Question 1 of 1" on the dashboard and the Active interview bar; it now shows the planned total.
 - The documented and launcher-enforced Node.js minimum was 18, but the build tool needs 20.19+ or 22.12+ (and the frontend tests
   22.12+): users on Node 18–20.18 or 22.0–22.11 passed `check` and then failed to build. The launcher now checks major.minor, the
   docs say 20.19+/22.12+, `frontend/package.json` declares `engines`, and the Linux hint no longer suggests the (too old) apt package.

@@ -11,6 +11,7 @@ try {
   await page.goto(`${BASE}/#/questions`, { waitUntil: "networkidle0" });
   await waitText(page, "No questions yet");
   check(true, "app loads from http://localhost; empty state shown");
+  if ((await page.$eval(".status-title", (b) => b.getAttribute("aria-expanded"))) === "false") await page.click(".status-title");      // short windows start with the summary only
   check((await page.$$('.status span[title] .dot')).length === 4, "service status pills rendered");
 
   // ---- one logo everywhere: favicon, sidebar, drawer
@@ -107,8 +108,12 @@ try {
 
   // Setup page: voices from the model + preview
   await page.goto(`${BASE}/#/setup`, { waitUntil: "networkidle0" });
+  await page.waitForSelector('[data-testid="voice-current"]');
+  await page.waitForFunction(() => /Hadley/.test(document.querySelector('[data-testid="voice-current"]')?.textContent || ""), { timeout: 10000 });
+  check((await page.$$(".vchip")).length === 0, "the voice section is compact: the chosen voice (Hadley) is shown and the list stays folded away");
+  await clickText(page, "button", "Change voice");                                      // the searchable list opens inline
   await page.waitForFunction(() => document.querySelectorAll(".vchip").length > 30);
-  const voices = await page.$$eval(".vchip .vn", (o) => o.map((x) => x.textContent));
+  const voices =await page.$$eval(".vchip .vn", (o) => o.map((x) => x.textContent));
   check(voices.includes("Harper") && voices.includes("default"), `voice picker lists Phonon's real voices (${voices.length})`);
   check(await page.$eval('.vchip[aria-checked="true"] .vn', (e) => e.textContent) === "Hadley", "storyboard default voice (Hadley) is preselected");
   await page.click('button[aria-label="Max follow-ups: 3"]'); await page.click('[role=radio][aria-label="Max follow-ups: 2"]').catch(() => {});
@@ -141,7 +146,7 @@ try {
 
   // submit with no LLM model installed: answer is kept, clear error + retry
   await clickText(page, "button", "Submit Answer");
-  await page.waitForFunction(() => document.body.innerText.includes("couldn’t be evaluated") || /Question 3 of 4|Follow-up/.test(document.body.innerText), { timeout: 240000 }); // cold model load + evaluation can take ~1 min
+  await page.waitForFunction(() => document.body.innerText.includes("couldn’t be evaluated") || /Question 2 of 4|Follow-up/.test(document.body.innerText), { timeout: 240000 }); // after Q1: a follow-up, or straight on to Q2 (the model decides). Cold model load + evaluation can take ~1 min
   const body = await textOf(page);
   if (body.includes("couldn’t be evaluated")) {
     check(body.includes("Draft answer survives a refresh") && body.includes("Retry evaluation"), "evaluation failure keeps the answer and offers Retry");

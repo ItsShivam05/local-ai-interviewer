@@ -103,15 +103,36 @@ export function Seg<T extends string | number>({ value, onChange, options, label
   );
 }
 
+/** Tabs (WAI-ARIA tabs pattern): arrow keys, Home and End move between tabs; pair each with a <TabPanel>. */
+export function Tabs<T extends string>({ tabs, value, onChange, label, idBase }: { tabs: { id: T; label: string }[]; value: T; onChange: (id: T) => void; label: string; idBase: string }) {
+  const refs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const onKey = (e: React.KeyboardEvent, i: number) => {
+    const to = e.key === "ArrowRight" ? (i + 1) % tabs.length : e.key === "ArrowLeft" ? (i - 1 + tabs.length) % tabs.length : e.key === "Home" ? 0 : e.key === "End" ? tabs.length - 1 : -1;
+    if (to < 0) return;
+    e.preventDefault(); onChange(tabs[to].id); refs.current[tabs[to].id]?.focus();
+  };
+  return (
+    <div className="rtabs" role="tablist" aria-label={label}>
+      {tabs.map((t, i) => (
+        <button key={t.id} ref={(el) => { refs.current[t.id] = el; }} type="button" role="tab" id={`${idBase}-tab-${t.id}`} aria-selected={value === t.id} aria-controls={`${idBase}-panel-${t.id}`}
+          tabIndex={value === t.id ? 0 : -1} className={`rtab ${value === t.id ? "on" : ""}`} onClick={() => onChange(t.id)} onKeyDown={(e) => onKey(e, i)}>{t.label}</button>
+      ))}
+    </div>
+  );
+}
+export function TabPanel({ id, idBase, active, children }: { id: string; idBase: string; active: boolean; children: ReactNode }) {
+  return <div role="tabpanel" id={`${idBase}-panel-${id}`} aria-labelledby={`${idBase}-tab-${id}`} hidden={!active} tabIndex={0} className="rpanel">{children}</div>;
+}
+
 /** Large selectable option cards (radiogroup) with icon, title and description. */
 export function OptionCards<T extends string | number>({ value, onChange, options, label, cols }: {
   value: T; onChange: (v: T) => void; label: string; cols?: number;
-  options: { value: T; title: string; desc?: string; icon: IconName; aria?: string }[];
+  options: { value: T; title: string; desc?: string; icon: IconName; aria?: string; disabled?: boolean }[];
 }) {
   return (
     <div className="ocards" data-cols={cols} role="radiogroup" aria-label={label} style={cols ? { gridTemplateColumns: `repeat(${cols}, minmax(0,1fr))` } : undefined}>
       {options.map((o) => (
-        <button key={String(o.value)} type="button" role="radio" aria-checked={value === o.value} aria-label={o.aria} className={`ocard ${value === o.value ? "on" : ""}`} onClick={() => onChange(o.value)}>
+        <button key={String(o.value)} type="button" role="radio" aria-checked={value === o.value} aria-label={o.aria} disabled={o.disabled} className={`ocard ${value === o.value ? "on" : ""}`} onClick={() => onChange(o.value)}>
           <span className="oc-ic"><Icon name={o.icon} /></span>
           <span className="oc-t">{o.title}</span>
           {o.desc && <span className="oc-d">{o.desc}</span>}

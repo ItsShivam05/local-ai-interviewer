@@ -184,13 +184,27 @@ class InterviewService:
                   (SELECT COUNT(*) FROM interview_items WHERE interview_id=i.id AND status='answered') AS answered,
                   (SELECT COUNT(*) FROM interview_items WHERE interview_id=i.id AND status='skipped') AS skipped,
                   (SELECT COUNT(*) FROM reports WHERE interview_id=i.id) AS has_report,
-                  (SELECT data_json FROM reports WHERE interview_id=i.id) AS rep
+                  (SELECT data_json FROM reports WHERE interview_id=i.id) AS rep,
+                  (SELECT COUNT(*) FROM interview_pool WHERE interview_id=i.id AND status='available') AS pool_left,
+                  i.config_json
                 FROM interviews i ORDER BY i.created_at DESC, i.id DESC""").fetchall()
         out = []
         for r in rows:
             d = dict(r)
             rep = d.pop("rep")
+            pool_left, cfg = d.pop("pool_left"), d.pop("config_json")
             d["average_score"] = (json.loads(rep)["summary"]["average_score"] if rep else None)
+            # A running adaptive interview creates its questions one at a time: report the planned total, as get_state does.
+            # Finished ones keep the number actually asked.
+            d["planned"] = False
+            if d["status"] in ACTIVE:
+                try:
+                    config = InterviewConfig.model_validate_json(cfg)
+                except ValueError:
+                    config = None
+                if config is not None and config.mode == "adaptive":
+                    d["total"] = adaptive.planned_total(adaptive.Settings(max_questions=config.max_questions), pool_left, d["total"])
+                    d["planned"] = True
             out.append(d)
         return out
 

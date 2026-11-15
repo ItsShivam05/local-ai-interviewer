@@ -32,6 +32,13 @@ execFileSync(VENV_PYTHON, ["-c", RESUME_PY, be.dataDir, join(ROOT, "backend")], 
 const { browser, page } = await launch({ width: 1280, height: 820 });
 const shot = async (name, full = false) => { await sleep(400); await page.screenshot({ path: join(OUT, `${name}.png`), fullPage: full }); console.log("saved", name); };
 const api = (path, init) => fetch(BASE + path, { headers: { "content-type": "application/json" }, ...init }).then((r) => r.json());
+// a believable question bank (covering the seeded history's topics) and a fictional user name, so no first-run prompts show
+const sid = (await api("/api/sets"))[0].id;
+for (const [text, topic, difficulty] of [["What does catchup do in an Airflow DAG?", "Airflow", "easy"], ["How do micro-partitions affect query pruning in Snowflake?", "Snowflake", "medium"],
+  ["Why does data skew slow down a Spark join and how do you fix it?", "Spark", "hard"], ["How do you remove duplicate rows while keeping the latest one?", "SQL", "medium"],
+  ["When would you choose a star schema over a data vault?", "Modeling", "medium"]])
+  await api(`/api/sets/${sid}/questions`, { method: "POST", body: JSON.stringify({ text, topic, difficulty }) });
+await page.evaluateOnNewDocument(() => { try { localStorage.setItem("lai.name", "Alex"); } catch { /* ignore */ } });
 
 try {
   await page.goto(`${BASE}/#/home`); await waitText(page, "Recent");
@@ -45,7 +52,7 @@ try {
 
   const reports = await api("/api/interviews");
   const latest = reports.find((r) => r.has_report);
-  await page.goto(`${BASE}/#/report/${latest.id}`); await waitText(page, "Scorecard");
+  await page.goto(`${BASE}/#/report/${latest.id}`); await waitText(page, "Topic-wise Performance");
   await shot("report");
 
   const resumes = await api("/api/resumes");
@@ -54,10 +61,7 @@ try {
   await waitText(page, "Worth preparing", 20000);
   await shot("candidate-profile");
 
-  const sid = (await api("/api/sets"))[0].id;
-  for (const [text, topic, difficulty] of [["What does catchup do in an Airflow DAG?", "Airflow", "easy"], ["How do micro-partitions affect query pruning in Snowflake?", "Snowflake", "medium"],
-    ["Why does data skew slow down a Spark join and how do you fix it?", "Spark", "hard"], ["How do you remove duplicate rows while keeping the latest one?", "SQL", "medium"]])
-    await api(`/api/sets/${sid}/questions`, { method: "POST", body: JSON.stringify({ text, topic, difficulty }) });
+
   const st = await api("/api/interviews", { method: "POST", body: JSON.stringify({ set_id: sid, config: { title: "Adaptive data engineering practice", mode: "adaptive",
     strategy: "resume", start_level: "intermediate", max_questions: 6, time_limit_minutes: 30, feedback_mode: "at_end", max_followups: 1, question_audio: "manual" },
     resume_auto: { resume_id: resumes[0].id, count: 3 } }) });

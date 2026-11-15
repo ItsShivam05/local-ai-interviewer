@@ -52,7 +52,7 @@ export default function ActiveInterviews({ rows, onChanged }: { rows: HistoryRow
               </div>
               <div className="aiv-m">
                 <div className="meter" role="progressbar" aria-label="Questions done" aria-valuemin={0} aria-valuemax={r.total} aria-valuenow={done}><i style={{ width: `${pct}%` }} /></div>
-                <span>{done} of {r.total} question{r.total === 1 ? "" : "s"} done · last activity {ago(r.updated_at)}</span>
+                <span>{done} of {r.planned ? "up to " : ""}{r.total} question{r.total === 1 ? "" : "s"} done · last activity {ago(r.updated_at)}</span>
               </div>
             </div>
             <div className="aiv-actions">

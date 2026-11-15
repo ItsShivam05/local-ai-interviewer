@@ -28,4 +28,16 @@ describe("RunInfo", () => {
     const { container } = render(<WhyThisQuestion reason={null} />);
     expect(container).toBeEmptyDOMElement();
   });
+  it("turns the clock to the warning colour in the last five minutes, and not before", () => {
+    const { rerender } = render(<RunInfo st={st({ mode: "fixed" })} remaining={301} />);
+    expect(screen.getByRole("timer").closest(".time")).not.toHaveClass("warn");
+    rerender(<RunInfo st={st({ mode: "fixed" })} remaining={300} />);
+    expect(screen.getByRole("timer").closest(".time")).toHaveClass("warn");
+    rerender(<RunInfo st={st({ mode: "fixed" })} remaining={59} />);
+    expect(screen.getByRole("timer").closest(".time")).toHaveClass("warn");
+  });
+  it("styles the time-is-up text with the same warning colour class", () => {
+    render(<RunInfo st={st({ mode: "fixed" })} remaining={0} />);
+    expect(screen.getByText(/Time is up/)).toHaveClass("timeup");
+  });
 });

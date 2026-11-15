@@ -1,5 +1,6 @@
 import { classLabel, CLASS_TONE, decisionLabel, deltaInfo, endReasonLabel, levelChanged, levelLabel, strategyLabel, timelineRows } from "../intel";
 import type { Classification, Report } from "../types";
+import { CLAIM_VERDICT_TONE } from "../resumeHelpers";
 import Icon from "./Icon";
 import { scoreClass } from "./ui";
 
@@ -14,8 +15,44 @@ function Bar({ label, value, max, cls, text }: { label: string; value: number | 
   );
 }
 
-/** Everything new in the report beyond the scorecard: classifications, difficulty, concept vs practice, progress, learning plan, adaptive timeline, resume coverage. Each part renders only when the report has it. */
-export default function ReportIntel({ r }: { r: Report }) {
+export type IntelPart = "overview" | "skills" | "adaptive";
+
+/** Does the learning plan exist? (the Overview tab pairs it with the topic chart) */
+export const hasLearningPlan = (r: Report) => (r.intelligence?.learning_plan.length ?? 0) > 0;
+/** Does the "Skills & progress" tab have anything in it? */
+export const hasSkillsContent = (r: Report) => {
+  const it = r.intelligence;
+  return !!(r.skills?.some((k) => k.average != null) || (r.progress ?? []).some((p) => p.average_score != null) || (it && (it.classifications.some((c) => c.count > 0) || it.difficulty.some((d) => d.questions > 0)
+    || (it.profiles?.length ?? 0) > 0 || (it.conceptual_vs_practical && (it.conceptual_vs_practical.conceptual != null || it.conceptual_vs_practical.practical != null)) || (it.evidence && (it.evidence.quotes > 0 || it.evidence.unverified_misconceptions > 0))
+    || (it.consistency && (it.consistency.flags.length > 0 || it.consistency.adjustments.length > 0)))));
+};
+
+/** The resume claims card (how well each resume claim was defended). */
+export function ResumeClaims({ r }: { r: Report }) {
+  if (!r.resume_claims || r.resume_claims.length === 0) return null;
+  return (
+    <div className="card" data-testid="resume-claims">
+      <div className="row between"><h2>Resume claims</h2><span className="muted small">How well you defended what your resume says · weakest first</span></div>
+      <div className="rz-claims">
+        {r.resume_claims.map((c) => (
+          <div className="rz-claim" key={`${c.resume_id}-${c.section}-${c.label}`}>
+            <div className="grow">
+              <div className="rz-claim-t">{c.label || c.section}</div>
+              <div className="muted small">{c.resume_name}{c.resume_deleted ? " (deleted resume)" : ""}{c.section ? ` › ${c.section}` : ""} · {c.question_numbers.map((n) => `Q${n}`).join(", ")}</div>
+              <div className="small rz-tip"><Icon name="target" size={13} />{c.tip}</div>
+            </div>
+            <span className={`mark ${scoreClass(c.average_score)}`}>{c.average_score}</span>
+            <span className={`badge ${CLAIM_VERDICT_TONE[c.verdict] ?? ""} rz-verdict`}>{c.verdict}</span>
+          </div>
+        ))}
+      </div>
+      <p className="muted small" style={{ margin: "8px 0 0" }}>Solid 7+ · Shaky 5–7 · Weak below 5. Skipped and unanswered questions are not counted.</p>
+    </div>
+  );
+}
+
+/** One tab's worth of the report beyond the scorecard: learning plan (Overview); difficulty, concept vs practice, progress, reliability, profiles (Skills & progress); timeline, resume coverage and claims (Adaptive). Each part renders only when the report has it. */
+export default function ReportIntel({ r, part }: { r: Report; part: IntelPart }) {
   const it = r.intelligence, ad = r.adaptive, rc = r.resume_coverage;
   const prog = (r.progress ?? []).filter((p) => p.average_score != null);
   const cls = (it?.classifications ?? []).filter((c) => c.count > 0);
@@ -25,11 +62,11 @@ export default function ReportIntel({ r }: { r: Report }) {
   const profiles = it?.profiles ?? [];
   const ev = it?.evidence, cons = it?.consistency;
   const hasCvp = !!cvp && (cvp.conceptual != null || cvp.practical != null);
-  if (!it && !ad && !rc && !prog.length) return null;
   const end = endReasonLabel(ad?.end_reason ?? r.interview.end_reason);
+  const skills = part === "skills", adaptive = part === "adaptive";
   return (
     <>
-      {(cls.length > 0 || diff.length > 0) && (
+      {skills && (cls.length > 0 || diff.length > 0) && (
         <div className="ri-split" data-testid="ri-breakdown">
           {cls.length > 0 && (
             <section className="card" aria-labelledby="ri-cls">
@@ -46,7 +83,7 @@ export default function ReportIntel({ r }: { r: Report }) {
         </div>
       )}
 
-      {(hasCvp || profiles.length > 0) && (
+      {skills && (hasCvp || profiles.length > 0) && (
         <div className="ri-split" data-testid="ri-skillsplit">
           {hasCvp && cvp && (
             <section className="card" aria-labelledby="ri-cvp">
@@ -67,7 +104,7 @@ export default function ReportIntel({ r }: { r: Report }) {
         </div>
       )}
 
-      {prog.length > 0 && (
+      {skills && prog.length > 0 && (
         <section className="card" data-testid="ri-progress" aria-labelledby="ri-progress-h">
           <div className="row between"><h2 id="ri-progress-h" style={{ margin: 0 }}>Progress since your last attempt</h2><span className="muted small">per topic, against your latest earlier report</span></div>
           <div style={{ marginTop: 6 }}>
@@ -85,7 +122,7 @@ export default function ReportIntel({ r }: { r: Report }) {
         </section>
       )}
 
-      {it && it.learning_plan.length > 0 && (
+      {part === "overview" && it && it.learning_plan.length > 0 && (
         <section className="card" data-testid="ri-plan" aria-labelledby="ri-plan-h">
           <h2 id="ri-plan-h" style={{ margin: 0 }}>Learning plan</h2><div className="muted small">Your lowest-scoring skills first, with one thing to practise</div>
           <ol className="ri-plan">
@@ -96,7 +133,7 @@ export default function ReportIntel({ r }: { r: Report }) {
         </section>
       )}
 
-      {((ev && (ev.quotes > 0 || ev.unverified_misconceptions > 0)) || (cons && (cons.flags.length > 0 || cons.adjustments.length > 0))) && (
+      {skills && ((ev && (ev.quotes > 0 || ev.unverified_misconceptions > 0)) || (cons && (cons.flags.length > 0 || cons.adjustments.length > 0))) && (
         <section className="card" data-testid="ri-trust" aria-labelledby="ri-trust-h">
           <h2 id="ri-trust-h" style={{ margin: 0 }}>How reliable the grading was</h2>
           <ul className="tight small" style={{ marginBottom: 0 }}>
@@ -108,7 +145,7 @@ export default function ReportIntel({ r }: { r: Report }) {
         </section>
       )}
 
-      {ad && (
+      {adaptive && ad && (
         <section className="card" data-testid="ri-adaptive" aria-labelledby="ri-ad-h">
           <div className="row between"><h2 id="ri-ad-h" style={{ margin: 0 }}>How the interview adapted</h2>
             <span className="muted small">{strategyLabel(ad.strategy)} · started {levelLabel(ad.start_level)} · finished {levelLabel(ad.final_level)}</span></div>
@@ -136,7 +173,7 @@ export default function ReportIntel({ r }: { r: Report }) {
         </section>
       )}
 
-      {rc && rc.claims_total > 0 && (
+      {adaptive && rc && rc.claims_total > 0 && (
         <section className="card" data-testid="ri-coverage" aria-labelledby="ri-cov-h">
           <div className="row between"><h2 id="ri-cov-h" style={{ margin: 0 }}>Resume coverage</h2><span className="muted small">{rc.questions} resume question{rc.questions === 1 ? "" : "s"} asked</span></div>
           <p style={{ margin: "8px 0 0" }}><b>{rc.claims_discussed} of {rc.claims_total}</b> experiences and projects from your resume came up.</p>
@@ -145,6 +182,7 @@ export default function ReportIntel({ r }: { r: Report }) {
             <ul className="ri-unex">{rc.unexplored.map((u) => <li key={`${u.section}-${u.label}`}>{u.label}<span className="muted"> · {u.section}</span></li>)}</ul></>}
         </section>
       )}
+      {adaptive && <ResumeClaims r={r} />}
     </>
   );
 }

@@ -92,7 +92,7 @@ try {
   await page.waitForSelector(".price-tbl");
   check((await page.$$eval(".price-tbl tbody tr", (r) => r.map((x) => x.querySelector("b").textContent))).join("|") === ALL.join("|"), "the price table lists just these three models");
   const dailyInput = 'input[placeholder="no limit"]';
-  await page.click(dailyInput, { clickCount: 3 }); await page.type(dailyInput, "5");
+  await page.click(dailyInput, { count: 3 }); await page.type(dailyInput, "5");
   check(await textOf(page, ".ai-page").then((t) => /unsaved changes/.test(t)), "unsaved changes are announced");
   await clickText(page, "button", "Save changes");
   await waitText(page, "Saved");
@@ -170,7 +170,7 @@ try {
   // ---------------------------------------------------------------- the spending limit stops calls BEFORE they are made, and can be raised
   iv = (await post("/api/interviews", { set_id: setId, config: { title: "Budget test", max_followups: 0 } })).id;
   await aiTab();
-  await page.click(dailyInput, { clickCount: 3 }); await page.type(dailyInput, "0.0001");
+  await page.click(dailyInput, { count: 3 }); await page.type(dailyInput, "0.0001");
   await clickText(page, "button", "Save changes"); await waitText(page, "Saved");
   const callsBefore = (await fc.stats()).chats.length;
   await page.goto(`${BASE}/#/interview/${iv}`, { waitUntil: "networkidle0" });
@@ -183,7 +183,7 @@ try {
   await page.goto(`${BASE}/#/setup`, { waitUntil: "networkidle0" }); await page.waitForSelector(".sec"); await sleep(500);
   check(/Daily budget used up/.test(await textOf(page, ".summary")), "Setup warns that the daily budget is used up before you start another interview");
   await aiTab();
-  await page.click(dailyInput, { clickCount: 3 }); await page.type(dailyInput, "5");
+  await page.click(dailyInput, { count: 3 }); await page.type(dailyInput, "5");
   await clickText(page, "button", "Save changes"); await waitText(page, "Saved");
   await page.goto(`${BASE}/#/interview/${iv}`, { waitUntil: "networkidle0" });
   await clickText(page, "button", "Retry evaluation");
