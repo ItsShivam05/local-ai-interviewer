@@ -68,7 +68,8 @@ class EvalProfile:
     label: str
     version: int
     weights: dict[str, float]                       # relative; re-normalised over the dimensions actually scored
-    advanced_dims: tuple[str, ...] = ("depth", "practical_application", "production_awareness", "edge_cases", "tradeoffs")
+    basic_scaled: tuple[str, ...] = ("depth", "practical_application", "edge_cases", "tradeoffs")       # count less on basic questions (v1 rule)
+    advanced_scaled: tuple[str, ...] = ("depth", "edge_cases", "tradeoffs", "production_awareness")    # count more on advanced questions
     meaning: dict[str, str] = field(default_factory=dict)   # profile-specific meaning of a dimension (behavioural)
     guidance: str = ""                              # one line added to the grading prompt
 
@@ -169,8 +170,10 @@ def effective_weights(profile: EvalProfile, rubric: RubricSettings, level: str, 
         if dim in LEGACY_DIMENSIONS:
             default = getattr(_DEFAULT_RUBRIC, dim)
             w *= (getattr(rubric, dim) / default) if default else 1.0
-        if dim in profile.advanced_dims:
-            w *= BASIC_FACTOR if level == "basic" else (ADVANCED_FACTOR if level == "advanced" else 1.0)
+        if level == "basic" and dim in profile.basic_scaled:
+            w *= BASIC_FACTOR
+        elif level == "advanced" and dim in profile.advanced_scaled:
+            w *= ADVANCED_FACTOR
         if w > 0:
             out[dim] = w
     return out
