@@ -112,7 +112,7 @@ export default function Feedback({ ev, score, followup }: { ev: Evaluation; scor
           <HowGraded ev={ev} />
           {ev.graded_by && (
             <div className="small muted graded-by" data-testid="graded-by">
-              {ev.graded_by.provider === "cloud" ? "Graded by " : "Graded on this computer by "}<b>{ev.graded_by.model}</b>{ev.graded_by.provider === "cloud" ? " (Ollama cloud)" : ""}
+              {ev.graded_by.provider === "cloud" ? "Graded by " : "Graded on this computer by "}<b>{ev.graded_by.model}</b>{ev.graded_by.provider === "cloud" ? " (Groq cloud)" : ""}
               {ev.graded_by.fell_back_from && ev.graded_by.provider === "cloud" && <> — <b>{ev.graded_by.fell_back_from}</b> was unavailable, so the fallback model graded this.</>}
               {ev.graded_by.fell_back_from && ev.graded_by.provider === "local" && <> — the cloud was unavailable ({ev.graded_by.reason ?? ev.graded_by.fell_back_from}), so your local model graded this.</>}
             </div>

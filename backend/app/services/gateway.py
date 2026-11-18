@@ -1,13 +1,13 @@
-"""One place decides which engine answers each model request: the local Ollama model (default) or Ollama cloud models (opt-in).
+"""One place decides which engine answers each model request: the local Ollama model (default) or Groq cloud models (opt-in).
 
-Rules that protect privacy and credits:
+Rules that protect privacy and the user's Groq allowance:
   * LOCAL mode never touches the cloud. There is no automatic switch from local to cloud, ever.
   * CLOUD mode sends only the text of the interview (questions, answers, rubric) to the models. Voice stays on this computer.
   * Each task has a role: the GRADER grades answers, writes feedback and the report summary; the CONVERSATION model writes follow-up
     questions and cleans up voice transcripts. If the grader fails for a reason a different model could fix (timeout, outage, unknown model),
     the FALLBACK model is tried once. The conversation tasks are optional polish with a free alternative, so they are never retried.
-    Problems that every model would hit (bad key, no credits, rate limit, budget used up) are NOT retried either,
-    so a failure never turns into repeated paid calls.
+    Problems another model would not fix or should not hide (bad key, rate limit, budget used up, text too long) are NOT retried
+    on another model either, so a failure never turns into repeated calls.
   * An optional budget stops cloud calls before they are made once the daily or total limit is reached.
   * Optionally, if the cloud fails, the LOCAL model is used instead (never the other way round) and the result says so.
 """
@@ -26,7 +26,7 @@ log = logging.getLogger("interviewer.gateway")
 
 ROLE_BY_PURPOSE = {"evaluation": "grader", "summary": "grader", "repair": "conversation", "followup": "conversation",
                    "resume_parse": "grader", "resume_questions": "grader"}
-NO_MODEL_FALLBACK = {"auth_failed", "auth_missing", "no_credits", "rate_limited", "budget_reached"}   # a different cloud model would hit the same wall
+NO_MODEL_FALLBACK = {"auth_failed", "auth_missing", "rate_limited", "budget_reached", "too_long"}   # reported to the user as they are, never papered over
 _ROUTE: ContextVar[Optional[dict[str, Any]]] = ContextVar("llm_route", default=None)
 
 

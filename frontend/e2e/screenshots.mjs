@@ -26,7 +26,7 @@ with db.tx() as c:
 `;
 
 const llm = await startFakeLlm({ delayMs: 50 });
-const be = await startBackend({ OLLAMA_HOST_URL: llm.url, TTS_PROVIDER: "system", STT_ENABLED: "0", OLLAMA_API_KEY: "" });
+const be = await startBackend({ OLLAMA_HOST_URL: llm.url, TTS_PROVIDER: "system", STT_ENABLED: "0", GROQ_API_KEY: "" });
 seedHistory(be.dataDir);
 execFileSync(VENV_PYTHON, ["-c", RESUME_PY, be.dataDir, join(ROOT, "backend")], { stdio: "inherit" });
 const { browser, page } = await launch({ width: 1280, height: 820 });

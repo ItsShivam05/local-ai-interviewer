@@ -55,7 +55,7 @@ CREATE TABLE resumes (
     raw_text TEXT,
     ai_profile_json TEXT,              -- the structure as the AI produced it ("Revert to AI version")
     profile_json TEXT,                 -- the current structure, edited by the user (source of truth for questions)
-    consent_cloud INTEGER,             -- 1: may be sent to Ollama cloud, 0: declined, NULL: not asked
+    consent_cloud INTEGER,             -- 1: may be sent to the cloud provider (Groq), 0: declined, NULL: not asked
     revision INTEGER NOT NULL DEFAULT 0,   -- bumped on every change of name/profile: stale tabs get 409
     job_id INTEGER NOT NULL DEFAULT 0,     -- bumped when a reading job starts or is cancelled: older jobs can no longer write
     created_at TEXT NOT NULL,

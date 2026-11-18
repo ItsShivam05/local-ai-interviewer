@@ -27,6 +27,14 @@ def from_ollama(reply: dict[str, Any], model: str, purpose: str, provider: str =
             "load_ms": ms("load_duration"), "prompt_ms": ms("prompt_eval_duration"), "output_ms": ms("eval_duration"), "total_ms": ms("total_duration")}
 
 
+def from_groq(usage: dict[str, Any], model: str, purpose: str) -> dict[str, Any]:
+    """The `usage` block of a Groq reply (token counts; times in SECONDS) -> our record (milliseconds). Groq has no model-load time;
+    time spent queued is part of the total. A reply without usage (not expected) is recorded with unknown token counts."""
+    ms = lambda key: int(round(float(usage.get(key) or 0) * 1000))
+    return {"model": model, "purpose": purpose, "provider": "cloud", "prompt_tokens": usage.get("prompt_tokens"), "output_tokens": usage.get("completion_tokens"),
+            "load_ms": 0, "prompt_ms": ms("prompt_time"), "output_ms": ms("completion_time"), "total_ms": ms("total_time") or ms("queue_time") + ms("prompt_time") + ms("completion_time")}
+
+
 _CTX: ContextVar[Optional[dict[str, Any]]] = ContextVar("usage_context", default=None)
 
 

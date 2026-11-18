@@ -193,7 +193,7 @@ export default function Setup() {
     ["msg", "Follow-ups", cfg.max_followups === 0 ? "None" : `Up to ${cfg.max_followups} each`],
     ["voice", "Voice", `${voiceLabel} · ${cfg.speech_speed}×`],
     ["target", "Strictness", cfg.strictness.charAt(0).toUpperCase() + cfg.strictness.slice(1)],
-    ["cpu", "AI engine", cloud ? `Ollama Cloud` : "This computer"],
+    ["cpu", "AI engine", cloud ? `Groq cloud` : "This computer"],
     ["eye", "Scores", "In the final report"],
   ];
 
@@ -204,8 +204,8 @@ export default function Setup() {
       </div>
       <ActiveInterviews rows={active} onChanged={hist.reload} />
       {health.data && !llmReady && (
-        <div className="notice error"><b>{cloud ? "Ollama cloud isn’t ready." : "The interview model isn’t ready."}</b> {cloud ? "Add your API key in Settings → AI models." : (health.data.ollama.error ?? health.data.llm.error)} You can still start, but answers can’t be evaluated until this is fixed.{" "}
-          <button className="linkbtn" onClick={() => openSettings("ai")}>{cloud ? "Open AI settings" : "Use Ollama cloud instead"}</button></div>
+        <div className="notice error"><b>{cloud ? "Groq cloud isn’t ready." : "The interview model isn’t ready."}</b> {cloud ? "Add your API key in Settings → AI models." : (health.data.ollama.error ?? health.data.llm.error)} You can still start, but answers can’t be evaluated until this is fixed.{" "}
+          <button className="linkbtn" onClick={() => openSettings("ai")}>{cloud ? "Open AI settings" : "Use Groq cloud instead"}</button></div>
       )}
       <ErrorNotice error={sets.error || qs.error} />
       {pre && showPre && (
@@ -426,7 +426,7 @@ export default function Setup() {
             {cloud && llmReady && (
               <div className="notice info small" role="status" style={{ marginTop: 0 }} data-testid="cost-estimate">
                 <b>Estimated cost: </b>{estCost === undefined ? "…" : estCost === null ? "unknown (a model has no price set)" : estCost === 0 ? "$0" : `up to ${fmtUsd(estCost)}`}
-                <div className="muted">An upper bound for this interview. Your answers are sent to Ollama’s servers.</div>
+                <div className="muted">An upper bound for this interview. Your answers are sent to Groq’s servers.</div>
               </div>
             )}
             {cloud && budgetToday?.reached && <div className="notice error small" role="alert" style={{ marginTop: 0 }}><b>Daily budget used up.</b> Answers will not be graded until you raise the limit in Settings → AI models or switch to the local model.</div>}

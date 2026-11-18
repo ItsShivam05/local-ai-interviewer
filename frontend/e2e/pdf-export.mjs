@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { BASE, check, clickText, launch, reportIssues, shot, sleep, startBackend, textOf } from "./lib.mjs";
 import { seedHistory } from "./seed.mjs";
 
-const be = await startBackend({ OLLAMA_API_KEY: "" });
+const be = await startBackend({ GROQ_API_KEY: "" });
 seedHistory(be.dataDir);
 const { browser, page: firstPage, issues } = await launch({ width: 1280, height: 900 });
 const dir = mkdtempSync(join(tmpdir(), "lai-pdf-"));

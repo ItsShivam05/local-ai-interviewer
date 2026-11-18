@@ -133,9 +133,10 @@ export interface AITest {
   at: string; ok: boolean; key_ok: boolean; models: string[]; missing: Record<string, string>; suggestions: Record<string, string[]>; message?: string; code?: string;
   message_test: { ok: boolean; model: string; text?: string; code?: string; message?: string; prompt_tokens?: number; output_tokens?: number } | null;
 }
+export interface AIProvider { name: string; keys_url: string; data_url: string; retention: string }
 export interface AIState {
   mode: "local" | "cloud"; ready: boolean; config: AIConfig; key: { set: boolean; source: "saved" | "environment" | null; hint: string | null };
-  budget: Budget; last_test: AITest | null; local_model: string; roles: Record<string, string>; sent_to_cloud: string[]; stays_local: string[];
+  budget: Budget; last_test: AITest | null; local_model: string; roles: Record<string, string>; provider: AIProvider; sent_to_cloud: string[]; stays_local: string[];
 }
 export type AIUpdate = Partial<Omit<AIConfig, "cloud_consent_at" | "mode">> & { mode?: "local" | "cloud"; acknowledge_cloud?: boolean; clear_daily_budget?: boolean; clear_total_budget?: boolean };
 export interface Stats {

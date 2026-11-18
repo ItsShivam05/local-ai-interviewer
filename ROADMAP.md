@@ -15,8 +15,8 @@ and state transitions.
 - **Measure grading quality of the 2.0 pipeline with the real `qwen3.5:4b` model.** The evidence and profile prompt was verified with
   a mocked model only. The plan is a small, labelled answer set (strong, partial, wrong, "I don't know", prompt-injection attempts)
   and a script that reports how the scores rank. **[contributors welcome]**
-- **Test cloud mode against the real Ollama cloud service.** It has so far been verified against a fake server only, including cost
-  estimates and the behaviour of reasoning models.
+- **Test cloud mode against the real Groq API.** It has so far been verified against a fake server only (streaming usage, rate-limit
+  handling, reasoning settings). `backend/tests/integration/test_real_groq.py` runs when `GROQ_API_KEY` is set. **[contributors welcome]**
 - **Try the microphone feature with a physical microphone** and different accents and Whisper sizes.
 
 ## Quality and maintainability

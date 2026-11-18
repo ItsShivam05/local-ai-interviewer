@@ -1,4 +1,4 @@
-"""What a cloud call costs. Prices verified against Ollama's pricing page; DeepSeek v4.1 Flash is half price off-peak."""
+"""What a cloud call costs. Prices verified against Groq's model table; custom price entries may carry an off-peak rate."""
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -9,12 +9,14 @@ UTC = timezone.utc
 WED_NOON = datetime(2026, 11, 4, 12, 0, tzinfo=UTC)      # a Wednesday
 
 
-# Ollama's "Model pricing" table (pay-as-you-go, USD per 1M tokens: input, output), copied from the page on 31 Oct 2026, for the three models the app uses.
-# DeepSeek has a peak rate (the row as listed) and an off-peak rate (the "Off-Peak" row).
-PUBLISHED = {"gpt-oss:120b": (0.15, 0.60), "deepseek-v4.1-flash": (0.30, 1.20, 0.15, 0.60), "gemma4:31b": (0.14, 0.40)}
+# Groq's model table (console.groq.com/docs/models; USD per 1M tokens: input, output), copied on 18 Nov 2026, for the two models the app uses.
+PUBLISHED = {"openai/gpt-oss-120b": (0.15, 0.60), "openai/gpt-oss-20b": (0.075, 0.30)}
+GRADER, SMALL = "openai/gpt-oss-120b", "openai/gpt-oss-20b"
+# A user-added price with an off-peak rate (no default model has one, but the price editor still supports it).
+OFFPEAK = ModelPrice(input_per_m=0.30, output_per_m=1.20, offpeak_input_per_m=0.15, offpeak_output_per_m=0.60)
 
 
-def test_the_three_models_have_exactly_the_published_prices():
+def test_the_two_models_have_exactly_the_published_prices():
     assert set(DEFAULT_PRICES) == set(PUBLISHED)
     for name, row in PUBLISHED.items():
         p = DEFAULT_PRICES[name]
@@ -22,16 +24,16 @@ def test_the_three_models_have_exactly_the_published_prices():
         assert (p.offpeak_input_per_m, p.offpeak_output_per_m) == (row[2:] if len(row) == 4 else (None, None)), name
 
 
-def test_deepseek_is_not_the_0_15_0_60_people_quote_at_peak():
-    d = DEFAULT_PRICES["deepseek-v4.1-flash"]
-    assert (d.input_per_m, d.output_per_m, d.offpeak_input_per_m, d.offpeak_output_per_m) == (0.30, 1.20, 0.15, 0.60)
+def test_no_default_model_has_an_off_peak_rate_and_nothing_of_the_old_provider_remains():
+    assert all(p.offpeak_input_per_m is None and p.offpeak_output_per_m is None for p in DEFAULT_PRICES.values())
+    assert not any(":" in name or "deepseek" in name or "gemma" in name for name in DEFAULT_PRICES)
 
 
 def test_cost_is_tokens_times_the_per_million_price():
-    assert cost_usd(DEFAULT_PRICES["gpt-oss:120b"], 900, 450, WED_NOON) == 0.000405
-    assert cost_usd(DEFAULT_PRICES["gemma4:31b"], 900, 450, WED_NOON) == 0.000306
-    assert cost_usd(DEFAULT_PRICES["gpt-oss:120b"], 1_000_000, 1_000_000, WED_NOON) == 0.75
-    assert cost_usd(DEFAULT_PRICES["gpt-oss:120b"], None, None, WED_NOON) == 0.0
+    assert cost_usd(DEFAULT_PRICES[GRADER], 900, 450, WED_NOON) == 0.000405
+    assert cost_usd(DEFAULT_PRICES[SMALL], 1000, 1000, WED_NOON) == 0.000375        # 0.000075 + 0.0003
+    assert cost_usd(DEFAULT_PRICES[GRADER], 1_000_000, 1_000_000, WED_NOON) == 0.75
+    assert cost_usd(DEFAULT_PRICES[GRADER], None, None, WED_NOON) == 0.0
 
 
 @pytest.mark.parametrize("when, peak", [
@@ -50,8 +52,8 @@ def test_peak_is_decided_in_utc_whatever_the_local_timezone():
     assert is_peak(datetime(2026, 11, 4, 17, 29, tzinfo=india)) is False      # 11:59 UTC
 
 
-def test_deepseek_costs_double_at_peak_and_models_without_an_off_peak_rate_never_change():
-    ds, gpt = DEFAULT_PRICES["deepseek-v4.1-flash"], DEFAULT_PRICES["gpt-oss:120b"]
+def test_a_price_with_an_off_peak_rate_costs_double_at_peak_and_models_without_one_never_change():
+    ds, gpt = OFFPEAK, DEFAULT_PRICES[GRADER]
     peak, off = WED_NOON, datetime(2026, 11, 8, 12, 0, tzinfo=UTC)
     assert cost_usd(ds, 1000, 1000, peak) == 0.0015 and cost_usd(ds, 1000, 1000, off) == 0.00075
     assert cost_usd(gpt, 1000, 1000, peak) == cost_usd(gpt, 1000, 1000, off)
@@ -62,10 +64,17 @@ def test_a_model_without_a_price_is_unknown_not_free():
     assert cost_usd(None, 1000, 1000, WED_NOON) is None
 
 
-@pytest.mark.parametrize("name", ["gemma4:31b", "GEMMA4:31B", "gemma4:31b-cloud", "gemma4:31b:cloud", " gemma4:31b "])
-def test_the_cli_and_api_spellings_find_the_same_price(name):
-    assert find_price(name, DEFAULT_PRICES) is DEFAULT_PRICES["gemma4:31b"]
-    assert normalise(name) == "gemma4:31b"
+@pytest.mark.parametrize("name", ["openai/gpt-oss-120b", "OpenAI/GPT-OSS-120B", "gpt-oss-120b", " gpt-oss-120b ", "GPT-OSS-120b"])
+def test_the_full_and_short_spellings_find_the_same_price(name):
+    assert find_price(name, DEFAULT_PRICES) is DEFAULT_PRICES[GRADER]
+    assert normalise(name) == GRADER
+
+
+@pytest.mark.parametrize("name, same", [("qwen/qwen3.8-27b", "qwen/qwen3.8-27b"), ("My-Org/Custom", "my-org/custom"), ("llama-3.3-70b-versatile", "llama-3.3-70b-versatile"),
+                                        ("gpt-oss:120b", "gpt-oss:120b")])
+def test_other_and_custom_ids_are_only_lower_cased(name, same):
+    """Including the old Ollama spelling: it is NOT silently mapped to a Groq model (the migration resets model names instead)."""
+    assert normalise(name) == same
 
 
 def test_prices_are_validated():

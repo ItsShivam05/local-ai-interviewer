@@ -33,14 +33,23 @@ sample data, use invented data.
 
 ### The optional cloud API key
 
-Cloud mode is off by default. If you use it, the Ollama cloud API key you enter in Settings is stored **in plain text** in the local
+Cloud mode (the Groq API, with your own key) is off by default. If you use it, the Groq API key you enter in Settings is stored **in plain text** in the local
 SQLite database (`data/interviewer.sqlite3`, `settings` table). It is protected only by file permissions: the data folder is made
 `0700` and the database files `0600` where the operating system supports it (not on Windows, where the folder's normal user
 permissions apply). The API never returns the key; it only shows the last four characters.
 
-To avoid storing the key at all, set `OLLAMA_API_KEY` in the environment or in `.env` (which is git-ignored). A key from the
+To avoid storing the key at all, set `GROQ_API_KEY` in the environment or in `.env` (which is git-ignored). A key from the
 environment takes precedence and nothing is written to the database. Never commit a real key. Treat database backups as secrets for
 the same reason.
+
+What cloud mode sends, and to whom: the text of questions, answers, rubrics and (after a separate per-resume consent) resume text
+goes to Groq's API over HTTPS. Groq's data policy (read 2026-11-18) says it does not retain this by default but may log requests for
+up to 30 days to fix reliability problems or investigate abuse, in the United States; the app shows this before you consent. The
+app cannot control or verify what a third party does with data it receives. The only cloud addresses in the source are in
+`backend/app/config.py` (enforced by `backend/tests/test_local_only.py`).
+
+Upgrading from a version that used Ollama cloud: on first start the old key is deleted, mode returns to local and every consent is
+cleared, so nothing is sent to the new provider until you add a Groq key and agree again.
 
 ## How dependencies and code are checked
 

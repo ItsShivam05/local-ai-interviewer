@@ -1,4 +1,4 @@
-"""Which AI runs the interview: the local Ollama model (default, private) or Ollama cloud models (opt-in, uses the user's credits).
+"""Which AI runs the interview: the local Ollama model (default, private) or Groq cloud models (opt-in, with the user's own Groq key).
 
 Stored in the local database's `settings` table. The API key is kept apart from the rest of the configuration and is NEVER returned
 by any API: the UI only ever sees whether a key exists, where it came from, and its last four characters.
@@ -14,9 +14,10 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ..db import Database, utcnow
 from ..errors import AppError
-from .pricing import DEFAULT_PRICES, ModelPrice
+from .pricing import DEFAULT_PRICES, GRADER_MODEL, SMALL_MODEL, ModelPrice
 
 CONFIG_KEY, SECRET_KEY, TEST_KEY = "ai_config", "ai_cloud_key", "ai_last_test"
+PROVIDER_KEY, PROVIDER = "ai_cloud_provider", "groq"      # which cloud service the saved key, consent and model names belong to
 MODEL_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:\-/]{0,79}$")
 MAX_PRICES = 150
 
@@ -27,11 +28,11 @@ def _default_prices() -> dict[str, ModelPrice]:
 
 class AIConfig(BaseModel):
     mode: Literal["local", "cloud"] = "local"
-    cloud_consent_at: Optional[str] = None            # when the user agreed that their text is sent to Ollama's servers
-    grader_model: str = "gpt-oss:120b"                # grades answers, writes feedback and the report summary
-    fallback_model: str = "deepseek-v4.1-flash"       # used automatically if the grader fails (and a good alternative grader)
+    cloud_consent_at: Optional[str] = None            # when the user agreed that their text is sent to Groq's servers
+    grader_model: str = GRADER_MODEL                  # grades answers, writes feedback and the report summary
+    fallback_model: str = SMALL_MODEL                 # used automatically if the grader fails
     use_fallback: bool = True
-    conversation_model: str = "gemma4:31b"            # writes follow-up questions and cleans up voice transcripts
+    conversation_model: str = SMALL_MODEL             # writes follow-up questions and cleans up voice transcripts
     fallback_to_local: bool = False                   # if the cloud fails, use the local model instead (never the other way round)
     enforce_budget: bool = True
     daily_budget_usd: Optional[float] = Field(default=1.0, ge=0, le=100_000)
@@ -43,7 +44,7 @@ class AIConfig(BaseModel):
     def _model(cls, v: str) -> str:
         v = (v or "").strip()
         if not MODEL_NAME.match(v):
-            raise ValueError("Use a model name like gpt-oss:120b (letters, digits and . : - _ / only).")
+            raise ValueError("Use a model id like openai/gpt-oss-120b (letters, digits and . : - _ / only).")
         return v
 
     @model_validator(mode="after")
@@ -79,13 +80,42 @@ def clean_key(raw: str) -> str:
     if key.lower().startswith("bearer "):
         key = key[7:].strip()
     if not 8 <= len(key) <= 512 or re.search(r"\s", key) or not key.isprintable():
-        raise AppError(422, "invalid_key", "That does not look like an API key. Paste it exactly as shown on ollama.com/settings/keys (no spaces).")
+        raise AppError(422, "invalid_key", "That does not look like an API key. Paste it exactly as shown on console.groq.com/keys (no spaces).")
     return key
 
 
 class AIConfigStore:
     def __init__(self, db: Database):
         self.db = db
+        self.migrate_provider()
+
+    def migrate_provider(self) -> bool:
+        """One-time, on the first start after the cloud service changed (Ollama cloud -> Groq).
+
+        A key, a consent and model names given for one company's service must not carry over to another's. So: back to local mode,
+        the saved key and the last connection test are deleted, the consent is cleared (also each resume's), and the cloud model
+        names return to the defaults. Budgets and the fallback switches are kept. Usage history is kept as history.
+        Returns True when it changed something. A brand-new database only gets the marker."""
+        with self.db.tx() as c:
+            row = c.execute("SELECT value FROM settings WHERE key=?", (PROVIDER_KEY,)).fetchone()
+            if row and row[0] == PROVIDER:
+                return False
+            old = c.execute("SELECT value FROM settings WHERE key=?", (CONFIG_KEY,)).fetchone()
+            had_key = c.execute("DELETE FROM settings WHERE key IN (?, ?)", (SECRET_KEY, TEST_KEY)).rowcount > 0
+            changed = had_key
+            if old:
+                try:
+                    data = json.loads(old[0])
+                    kept = {k: data[k] for k in ("use_fallback", "fallback_to_local", "enforce_budget", "daily_budget_usd", "total_budget_usd") if k in data}
+                    cfg = AIConfig.model_validate(kept)            # mode local, no consent, default models, default prices
+                except Exception:
+                    cfg = AIConfig()
+                c.execute("UPDATE settings SET value=? WHERE key=?", (self._dump(cfg), CONFIG_KEY))
+                changed = True
+            if c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='resumes'").fetchone():
+                changed = c.execute("UPDATE resumes SET consent_cloud=NULL WHERE consent_cloud IS NOT NULL").rowcount > 0 or changed
+            c.execute("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (PROVIDER_KEY, PROVIDER))
+        return changed
 
     # ------------------------------------------------------------ configuration
     def get(self) -> AIConfig:
@@ -131,9 +161,9 @@ class AIConfigStore:
         if patch.mode is not None:
             if patch.mode == "cloud":                       # switching TO the cloud needs consent and a key; switching back never does
                 if not data.get("cloud_consent_at"):
-                    raise AppError(422, "consent_required", "Please confirm that you understand your questions and answers will be sent to Ollama's servers.")
+                    raise AppError(422, "consent_required", "Please confirm that you understand your questions and answers will be sent to Groq's servers.")
                 if not self.api_key():
-                    raise AppError(422, "key_required", "Add your Ollama cloud API key first (ollama.com/settings/keys).")
+                    raise AppError(422, "key_required", "Add your Groq API key first (console.groq.com/keys).")
             data["mode"] = patch.mode
         try:
             cfg = AIConfig.model_validate(data)
@@ -144,7 +174,7 @@ class AIConfigStore:
 
     # ------------------------------------------------------------ the API key (write-only from the outside)
     def api_key(self) -> Optional[str]:
-        env = (os.environ.get("OLLAMA_API_KEY") or "").strip()
+        env = (os.environ.get("GROQ_API_KEY") or "").strip()
         if env:
             return env
         with self.db.read() as c:
@@ -152,7 +182,7 @@ class AIConfigStore:
         return row[0] if row and row[0] else None
 
     def key_info(self) -> dict[str, Any]:
-        env = (os.environ.get("OLLAMA_API_KEY") or "").strip()
+        env = (os.environ.get("GROQ_API_KEY") or "").strip()
         key = self.api_key()
         return {"set": bool(key), "source": "environment" if env else ("saved" if key else None), "hint": f"••••{key[-4:]}" if key and len(key) >= 12 else ("••••" if key else None)}
 

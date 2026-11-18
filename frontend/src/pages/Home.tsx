@@ -173,7 +173,7 @@ export default function Home() {
   const h = health.data;
   const cloud = h?.ai.mode === "cloud";
   const localProblem = !!h && !cloud && (!h.ollama.ok || !h.llm.installed);
-  const problem = h && (cloud ? (!h.ai.ready ? "Ollama cloud is not set up yet: add your API key in Settings → AI models." : h.tts.error)
+  const problem = h && (cloud ? (!h.ai.ready ? "Groq cloud is not set up yet: add your API key in Settings → AI models." : h.tts.error)
     : (!h.ollama.ok ? h.ollama.error : !h.llm.installed ? h.llm.error : h.tts.error));
   const commit = () => { const v = draft.trim(); if (v) { saveName(v); setName(v); } };
   const skip = () => { try { localStorage.setItem("lai.name.skip", "1"); } catch { /* ignore */ } setSkipped(true); };
@@ -195,9 +195,9 @@ export default function Home() {
         </form>
       )}
       {h && <button className="engine-chip" onClick={() => openSettings("ai")} aria-label="Change the AI engine in Settings">
-        <Icon name={cloud ? "bolt" : "shield"} />AI engine: <b>{cloud ? `Ollama Cloud · ${h.ai.grader_model}` : `On this computer · ${h.llm.model}`}</b><span className="muted">Change</span></button>}
+        <Icon name={cloud ? "bolt" : "shield"} />AI engine: <b>{cloud ? `Groq cloud · ${h.ai.grader_model}` : `On this computer · ${h.llm.model}`}</b><span className="muted">Change</span></button>}
       {problem && <div className="notice error" style={{ marginTop: 14 }}><b>Setup needed:</b> {problem}{" "}
-        {(cloud || localProblem) && <button className="linkbtn" onClick={() => openSettings("ai")}>{cloud ? "Open AI settings" : "Use Ollama cloud instead"}</button>}</div>}
+        {(cloud || localProblem) && <button className="linkbtn" onClick={() => openSettings("ai")}>{cloud ? "Open AI settings" : "Use Groq cloud instead"}</button>}</div>}
       <ErrorNotice error={sets.error || hist.error} />
       {!hist.error && (hist.data || !hist.loading) && (stats.data || !stats.loading) && <NextStepCard rows={hist.data} stats={stats.data} />}
 

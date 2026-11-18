@@ -9,8 +9,8 @@ export const fmtUsd = (n: number | null | undefined) => {
   return `$${n.toFixed(2)}`;
 };
 
-/** The names people use for the same cloud model ("gemma4:31b-cloud" in the CLI, "gemma4:31b" in the API). */
-export const normaliseModel = (m: string) => m.trim().toLowerCase().replace(/[-:]cloud$/, "");
+/** Lower-cased; the short spelling "gpt-oss-120b" is the same model as "openai/gpt-oss-120b" (mirrors the server). */
+export const normaliseModel = (m: string) => { const x = m.trim().toLowerCase(); return /^gpt-oss-[a-z0-9.-]+$/.test(x) ? `openai/${x}` : x; };
 
 export const priceKey = (model: string, prices: Record<string, ModelPrice>): string | null => {
   const want = normaliseModel(model);
@@ -22,7 +22,7 @@ export const priceFor = (model: string, prices: Record<string, ModelPrice>): Mod
   return key ? prices[key] : null;
 };
 
-/** The dearer (peak) rate: estimates should never promise less than what a call can cost. */
+/** Estimates use the plain (peak) rate: they should never promise less than what a call can cost. */
 const peakCost = (p: ModelPrice | null, tokensIn: number, tokensOut: number) => (p ? (tokensIn * p.input_per_m + tokensOut * p.output_per_m) / 1_000_000 : null);
 
 // typical sizes measured on real interviews: grading reads ~1,500 tokens and writes ~450 (reasoning models add some); a summary ~700/250; a follow-up writer ~400/80
@@ -45,7 +45,7 @@ export const cleanKeyDraft = (raw: string) => { const k = raw.trim(); return /^b
 export type KeyCheck = { state: "empty" | "short" | "spaces" | "ok"; text: string };
 export function checkKeyDraft(raw: string): KeyCheck {
   const k = cleanKeyDraft(raw);
-  if (!k) return { state: "empty", text: "Copy the whole key from ollama.com/settings/keys, then press Paste (or ⌘V / Ctrl+V)." };
+  if (!k) return { state: "empty", text: "Copy the whole key from the Groq console, then press Paste (or ⌘V / Ctrl+V)." };
   if (/\s/.test(k)) return { state: "spaces", text: "There are spaces inside this key. Copy it again without them." };
   if (k.length < 8) return { state: "short", text: "That looks too short. Copy the whole key." };
   return { state: "ok", text: `Looks right · ${k.length} characters. It is checked when you test the connection.` };
@@ -53,19 +53,19 @@ export function checkKeyDraft(raw: string): KeyCheck {
 
 // ---------------------------------------------------------------- model pickers (Settings → AI models)
 export type ModelRole = "grader" | "fallback" | "conversation";
-/** The only three models this app is built around, one recommended per role. Every dropdown offers exactly these. */
-export const SUPPORTED_MODELS = ["gpt-oss:120b", "deepseek-v4.1-flash", "gemma4:31b"] as const;
-export const RECOMMENDED: Record<ModelRole, string> = { grader: "gpt-oss:120b", fallback: "deepseek-v4.1-flash", conversation: "gemma4:31b" };
+/** The only two models this app is built around, one recommended per role. Every dropdown offers exactly these. */
+export const SUPPORTED_MODELS = ["openai/gpt-oss-120b", "openai/gpt-oss-20b"] as const;
+export const RECOMMENDED: Record<ModelRole, string> = { grader: "openai/gpt-oss-120b", fallback: "openai/gpt-oss-20b", conversation: "openai/gpt-oss-20b" };
 /** Prices are always shown with three decimals so a row reads "$0.150 in · $0.600 out" (never "$0.15" next to "$1.2"). */
 export const fmtRate = (n: number) => `$${n.toFixed(3)}`;
 export interface ModelOption { value: string; label: string }
 
-/** The dropdown for one role: the three supported models in a fixed order, the role's own one marked "(recommended)". */
+/** The dropdown for one role: the two supported models in a fixed order, the role's own one marked "(recommended)". */
 export function modelOptions(role: ModelRole): ModelOption[] {
   return SUPPORTED_MODELS.map((m) => ({ value: m, label: m === RECOMMENDED[role] ? `${m} (recommended)` : m }));
 }
 
-/** Which dropdown entry stands for this model name (the CLI spelling "x-cloud" matches "x"), or null for any other name. */
+/** Which dropdown entry stands for this model name (the short spelling "gpt-oss-120b" matches "openai/gpt-oss-120b"), or null for any other name. */
 export function selectedOption(value: string, options: ModelOption[]): string | null {
   const want = normaliseModel(value);
   return options.find((o) => normaliseModel(o.value) === want)?.value ?? null;

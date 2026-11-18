@@ -1,6 +1,6 @@
 """Settings -> AI models: choose local or cloud, add the API key, pick models, set a budget, test the connection.
 
-Credit safety: nothing here calls the cloud except POST /api/ai/test (which only LISTS models unless the user asks for one tiny message),
+Allowance safety: nothing here calls the cloud except POST /api/ai/test (which only LISTS models unless the user asks for one tiny message),
 and that endpoint refuses to run more than once every few seconds. GET endpoints never touch the network.
 """
 from __future__ import annotations
@@ -12,6 +12,7 @@ from typing import Any
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
+from ..config import CLOUD_DATA_URL, CLOUD_KEYS_URL
 from ..db import utcnow
 from ..errors import AppError
 from ..services.ai_config import AIConfigUpdate
@@ -42,8 +43,11 @@ def public(c) -> dict[str, Any]:
         "budget": c.gateway.budget_status(cfg),
         "last_test": c.ai.last_test(),
         "local_model": c.settings.llm_model,
-        "roles": {"grader": "Grades answers, writes the feedback and the report summary.", "fallback": "Takes over automatically if the grader fails; also a good alternative grader.",
+        "roles": {"grader": "Grades answers, writes the feedback and the report summary.", "fallback": "Takes over automatically if the grader fails.",
                   "conversation": "Writes follow-up questions and cleans up voice transcripts."},
+        "provider": {"name": "Groq", "keys_url": CLOUD_KEYS_URL, "data_url": CLOUD_DATA_URL,
+                     "retention": "Groq says it does not keep your text by default, but may log requests for up to 30 days to fix reliability "
+                                  "problems or investigate abuse. Its servers are in the United States."},
         "sent_to_cloud": ["Your interview questions", "Your answers (typed, or the text of what you said)", "Your expected answers / rubrics"],
         "stays_local": ["Your voice recordings and the speech-to-text", "The spoken questions (voice)", "Your database, reports and settings"],
     }
@@ -82,10 +86,10 @@ def test_connection(body: TestIn, request: Request) -> dict[str, Any]:
     now = time.monotonic()
     last = getattr(request.app.state, "ai_test_at", 0.0)
     if now - last < TEST_COOLDOWN_S:
-        raise AppError(429, "too_soon", f"Please wait a few seconds between connection tests ({TEST_COOLDOWN_S:.0f} s). This protects your credits.")
+        raise AppError(429, "too_soon", f"Please wait a few seconds between connection tests ({TEST_COOLDOWN_S:.0f} s). This protects your rate limit.")
     request.app.state.ai_test_at = now
     if not c.ai.api_key():
-        raise AppError(422, "key_required", "Add your Ollama cloud API key first.")
+        raise AppError(422, "key_required", "Add your Groq API key first.")
     result: dict[str, Any] = {"at": utcnow(), "ok": False, "key_ok": False, "models": [], "missing": {}, "suggestions": {}, "message_test": None}
     try:
         models = c.cloud.list_models()
@@ -99,7 +103,7 @@ def test_connection(body: TestIn, request: Request) -> dict[str, Any]:
     missing = {role: m for role, m in wanted.items() if normalise(m) not in have}
     result.update(key_ok=True, models=models, missing=missing, ok=not missing,
                   suggestions={m: difflib.get_close_matches(normalise(m), [normalise(x) for x in models], n=3, cutoff=0.45) for m in missing.values()},
-                  message=("Connected. All three models are available." if not missing else "Connected, but some models you chose were not found."))
+                  message=("Connected. The models you chose are available." if not missing else "Connected, but some models you chose were not found."))
     if body.send_message:
         try:
             result["message_test"] = {"ok": True, "model": cfg.grader_model, **c.cloud.tiny_message(cfg.grader_model)}

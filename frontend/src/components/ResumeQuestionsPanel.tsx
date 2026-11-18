@@ -117,7 +117,7 @@ export default function ResumeQuestionsPanel({ resumes, settings, onSettings, qu
   const answerConsent = async (accept: boolean) => {
     const c = consent;
     if (!c) return;
-    if (!accept) { setConsent(null); setError("Nothing was sent. These questions need your OK to use Ollama cloud (or switch to the local model in Settings → AI models)."); return; }
+    if (!accept) { setConsent(null); setError("Nothing was sent. These questions need your OK to use Groq cloud (or switch to the local model in Settings → AI models)."); return; }
     setConsentBusy(true);
     try { for (const id of c.ids) await resumesApi.consent(id, true); onResumesChanged(); setConsent(null); c.then(); }
     catch (e) { toast("error", (e as Error).message); setConsent(null); }
@@ -161,7 +161,7 @@ export default function ResumeQuestionsPanel({ resumes, settings, onSettings, qu
           <>
             <button className="btn primary" disabled={!settings.resume_ids.length} onClick={() => (questions.length ? setConfirmAll(true) : generate(true))}>
               {questions.length ? "Regenerate all" : "Generate questions"}</button>
-            <span className="muted small">about {minutes} min {cloud ? "with Ollama cloud" : "on this computer"}{cost !== undefined ? ` · estimated cost ${cost === null ? "unknown (no price set)" : `up to ${fmtUsd(cost)}`}` : ""}</span>
+            <span className="muted small">about {minutes} min {cloud ? "with Groq cloud" : "on this computer"}{cost !== undefined ? ` · estimated cost ${cost === null ? "unknown (no price set)" : `up to ${fmtUsd(cost)}`}` : ""}</span>
           </>
         ) : (
           <div className="rz-genrun" role="status" aria-live="polite">
@@ -171,7 +171,7 @@ export default function ResumeQuestionsPanel({ resumes, settings, onSettings, qu
           </div>
         )}
       </div>
-      {cloud && <div className="notice info small" style={{ margin: 0 }}><Icon name="cloud" /> Cloud mode is on: the selected resumes’ organised content is sent to Ollama’s servers to write these questions (you are asked first for each resume).</div>}
+      {cloud && <div className="notice info small" style={{ margin: 0 }}><Icon name="cloud" /> Cloud mode is on: the selected resumes’ organised content is sent to Groq’s servers to write these questions (you are asked first for each resume).</div>}
       {error && <div className="notice error small" role="alert" style={{ margin: 0 }}>{error} {!running && settings.resume_ids.length > 0 && <button className="linkbtn" onClick={() => generate(true)}>Try again</button>}</div>}
       {warnings.map((w) => <div key={w} className="notice warn small" role="status" style={{ margin: 0 }}>{w}</div>)}
 

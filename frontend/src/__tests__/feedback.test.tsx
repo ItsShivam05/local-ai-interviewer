@@ -23,14 +23,14 @@ describe("Feedback", () => {
     expect(screen.queryByTestId("graded-as")).toBeNull();
   });
   it("says which model graded the answer and where it ran", () => {
-    const { rerender } = render(<Feedback ev={{ ...base, graded_by: { provider: "cloud", model: "gpt-oss:120b", fell_back_from: null } }} score={4.9} />);
-    expect(screen.getByTestId("graded-by")).toHaveTextContent("Graded by gpt-oss:120b (Ollama cloud)");
+    const { rerender } = render(<Feedback ev={{ ...base, graded_by: { provider: "cloud", model: "openai/gpt-oss-120b", fell_back_from: null } }} score={4.9} />);
+    expect(screen.getByTestId("graded-by")).toHaveTextContent("Graded by openai/gpt-oss-120b (Groq cloud)");
     expect(screen.getByTestId("graded-by")).not.toHaveTextContent("unavailable");
-    rerender(<Feedback ev={{ ...base, graded_by: { provider: "cloud", model: "deepseek-v4.1-flash", fell_back_from: "gpt-oss:120b" } }} score={4.9} />);
-    expect(screen.getByTestId("graded-by")).toHaveTextContent("gpt-oss:120b was unavailable, so the fallback model graded this");
-    rerender(<Feedback ev={{ ...base, graded_by: { provider: "local", model: "qwen3.5:4b", fell_back_from: "gpt-oss:120b", reason: "Ollama cloud had a problem" } }} score={4.9} />);
+    rerender(<Feedback ev={{ ...base, graded_by: { provider: "cloud", model: "openai/gpt-oss-20b", fell_back_from: "openai/gpt-oss-120b" } }} score={4.9} />);
+    expect(screen.getByTestId("graded-by")).toHaveTextContent("openai/gpt-oss-120b was unavailable, so the fallback model graded this");
+    rerender(<Feedback ev={{ ...base, graded_by: { provider: "local", model: "qwen3.5:4b", fell_back_from: "openai/gpt-oss-120b", reason: "Groq had a problem" } }} score={4.9} />);
     expect(screen.getByTestId("graded-by")).toHaveTextContent("Graded on this computer by qwen3.5:4b");
-    expect(screen.getByTestId("graded-by")).toHaveTextContent("the cloud was unavailable (Ollama cloud had a problem)");
+    expect(screen.getByTestId("graded-by")).toHaveTextContent("the cloud was unavailable (Groq had a problem)");
   });
   it("shows nothing about the engine for old evaluations that have no record of it", () => {
     render(<Feedback ev={base} score={4.9} />);

@@ -37,7 +37,7 @@ export const METHOD_HELP: Record<string, string> = {
 /** One plain sentence about what is happening right now. */
 export function stageText(r: Pick<ResumeSummary, "status" | "stage_detail">): string {
   const d = r.stage_detail && r.stage_detail !== "queued" && r.stage_detail !== "awaiting_cloud_consent" ? r.stage_detail : "";
-  if (awaitingConsent(r)) return "Waiting for your OK to use Ollama cloud";
+  if (awaitingConsent(r)) return "Waiting for your OK to use Groq cloud";
   switch (r.status) {
     case "uploaded": return "Waiting to start…";
     case "extracting": return d && /page/.test(d) ? `Reading text · ${d}` : "Reading text…";

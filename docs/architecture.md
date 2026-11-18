@@ -18,7 +18,7 @@ flowchart LR
         Services --> Speech["tts.py / stt.py"]
     end
     Gateway -->|"default"| Ollama["Local Ollama<br/>127.0.0.1:11434"]
-    Gateway -.->|"opt-in, with consent and key"| Cloud["Ollama cloud<br/>https://ollama.com"]
+    Gateway -.->|"opt-in, with consent and key"| Cloud["Groq API<br/>api.groq.com"]
     Speech --> Ollama
     Speech --> Whisper["faster-whisper<br/>in-process, optional"]
     Services --> Files[("data/ folder<br/>resume PDFs, audio cache, backups")]
@@ -84,13 +84,15 @@ code path. See [adaptive-interviews.md](adaptive-interviews.md).
 
 - **Local** (default): `services/ollama.py` talks to Ollama on loopback. The configuration refuses a non-loopback Ollama URL unless
   `ALLOW_NON_LOCAL_OLLAMA=1`.
-- **Cloud** (opt-in): `services/cloud.py`. Switching to cloud mode needs a recorded consent and an API key; there is never an
-  automatic switch from local to cloud. Roles: a *grader* model for grading, summaries and resume work, and a *conversation* model
+- **Cloud** (opt-in): `services/cloud.py`, a client for the Groq API (OpenAI-compatible chat completions, streamed as server-sent
+  events) using the user's own key. Switching to cloud mode needs a recorded consent and an API key; there is never an
+  automatic switch from local to cloud. A rate limit (HTTP 429) is waited out once if the reply can still arrive in time. Roles: a *grader* model for grading, summaries and resume work, and a *conversation* model
   for follow-ups and transcript cleanup. Optional fallback model, optional fallback to the local model, and an optional spending
   budget checked before each call.
 - Every reply's tokens, timings and (cloud) estimated cost are recorded locally by `services/usage.py` (the Model usage page).
 
-Cloud mode has been verified against a fake server only (see README section 11).
+Cloud mode has been verified against a fake Groq server only (see README section 11); `backend/tests/integration/test_real_groq.py`
+checks the real API when `GROQ_API_KEY` is set.
 
 ## Resume pipeline
 
@@ -113,7 +115,7 @@ separate model call that can fail and be regenerated without losing the scores.
 | What | Where |
 |---|---|
 | Question sets, interviews, turns, evaluations, reports, resumes (profiles), settings, model usage | SQLite: `data/interviewer.sqlite3` (WAL mode) |
-| Optional cloud API key | the `settings` table of that database (see [SECURITY.md](../SECURITY.md)); `OLLAMA_API_KEY` in the environment avoids storing it |
+| Optional cloud API key | the `settings` table of that database (see [SECURITY.md](../SECURITY.md)); `GROQ_API_KEY` in the environment avoids storing it |
 | Resume PDFs | `data/resumes/<uuid>.pdf` |
 | Generated question audio cache | `data/audio_cache/` (limit `AUDIO_CACHE_MB`) |
 | Temporary copy made for the backup download (`GET /api/backup`) | `data/backups/` |

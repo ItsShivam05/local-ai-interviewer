@@ -1,9 +1,9 @@
 // Waiting is never silent: skeletons for pages and data, a quiet bar at the top for slow requests, busy buttons, a recovery notice when a page
-// file is missing. Also checks the app does not repeat the same request when you move between pages (credit and CPU friendly).
+// file is missing. Also checks the app does not repeat the same request when you move between pages (rate-limit and CPU friendly).
 import { BASE, check, clickText, launch, reportIssues, sleep, startBackend, textOf } from "./lib.mjs";
 import { seedHistory } from "./seed.mjs";
 
-const be = await startBackend({ OLLAMA_API_KEY: "" });
+const be = await startBackend({ GROQ_API_KEY: "" });
 seedHistory(be.dataDir);
 const { browser, page, issues } = await launch({ width: 1280, height: 900 });
 const delays = []; const blocked = []; const seen = [];

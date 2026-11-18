@@ -15,7 +15,7 @@ open(sys.argv[1], "wb").write(text_pdf()); open(sys.argv[2], "wb").write(two_col
 const PDF1 = join(dir, "jane-cv.pdf"), PDF2 = join(dir, "two-col.pdf");
 
 const llm = await startFakeLlm();
-const be = await startBackend({ OLLAMA_HOST_URL: llm.url, TTS_PROVIDER: "system", STT_ENABLED: "0", OLLAMA_API_KEY: "" });
+const be = await startBackend({ OLLAMA_HOST_URL: llm.url, TTS_PROVIDER: "system", STT_ENABLED: "0", GROQ_API_KEY: "" });
 const { browser, page, issues } = await launch();
 const api = async (p, init) => (await fetch(`${BASE}${p}`, init)).json();
 const post = (p, b) => api(p, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) });

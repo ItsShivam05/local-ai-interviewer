@@ -3,6 +3,7 @@ import { api } from "../api";
 import { fmtUsd, fmtRate, normaliseModel, priceFor, checkKeyDraft, cleanKeyDraft, modelOptions, selectedOption, SUPPORTED_MODELS, type ModelRole } from "../aiHelpers";
 import type { AIConfig, AITest, ModelPrice } from "../types";
 import Icon from "./Icon";
+import { ExtLink, RetentionNote } from "./CloudDisclosure";
 import { CardsSkeleton } from "./Loaders";
 import { Confirm, ErrorNotice, OptionCards, Switch, useAsync, useToast } from "./ui";
 
@@ -23,7 +24,7 @@ function KeyField({ value, onChange, onSubmit, disabled }: { value: string; onCh
     <div className="keyfield">
       <div className={`keybox is-${chk.state}`}>
         <span className="kb-ic" aria-hidden="true"><Icon name={chk.state === "ok" ? "check" : "lock"} /></span>
-        <input type={show ? "text" : "password"} aria-label="Ollama cloud API key" aria-describedby="key-hint" autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} data-lpignore="true" data-1p-ignore="true"
+        <input type={show ? "text" : "password"} aria-label="Groq API key" aria-describedby="key-hint" autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} data-lpignore="true" data-1p-ignore="true"
           placeholder="Paste your API key here" value={value} maxLength={512} disabled={disabled}
           onChange={(e) => onChange(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && chk.state === "ok") onSubmit?.(); }} />
         <button type="button" className="kb-btn" onClick={() => void paste()} disabled={disabled}><Icon name="copy" />Paste</button>
@@ -39,7 +40,7 @@ function ModelRow({ role, title, desc, value, onChange, models, tested, prices }
 }) {
   const options = useMemo(() => modelOptions(role), [role]);
   const match = selectedOption(value, options);
-  const found = models.some((m) => m.toLowerCase().replace(/[-:]cloud$/, "") === value.trim().toLowerCase().replace(/[-:]cloud$/, ""));
+  const found = models.some((m) => normaliseModel(m) === normaliseModel(value));
   const price = priceFor(value, prices);
   return (
     <div className="ai-role">
@@ -58,7 +59,7 @@ function ModelRow({ role, title, desc, value, onChange, models, tested, prices }
   );
 }
 
-/** Settings -> AI models: local or Ollama cloud, the API key, which model does what, a free connection test, prices and a spending limit. */
+/** Settings -> AI models: local or Groq cloud, the API key, which model does what, a free connection test, prices and a spending limit. */
 export default function AIModels() {
   const toast = useToast();
   const ai = useAsync(() => api.ai(), []);
@@ -124,7 +125,7 @@ export default function AIModels() {
     <div className="ai-page">
       <ErrorNotice error={ai.error} />
       {s.mode === "cloud" && (
-        <div className="notice info" role="status"><b>Cloud mode is on.</b> The text of your questions and answers is sent to Ollama’s servers to be graded and uses your credits. Your voice and your database stay on this computer.</div>
+        <div className="notice info" role="status"><b>Cloud mode is on.</b> The text of your questions and answers is sent to Groq’s servers to be graded. Your voice and your database stay on this computer.</div>
       )}
 
       <div className="card">
@@ -132,7 +133,7 @@ export default function AIModels() {
         <p className="muted" style={{ marginTop: -4 }}>Choose where your interview is graded. You can switch at any time; your questions, history and reports are the same either way.</p>
         <OptionCards label="AI engine" value={view} onChange={(v) => setChoice(v === s.mode ? null : v)} cols={2} options={[
           { value: "local", title: "On this computer", desc: `Private and free: your text never leaves this machine. Uses about 4 GB of memory and takes ~25 s per answer (${s.local_model}).`, icon: "shield", aria: "Use the local model" },
-          { value: "cloud", title: "Ollama Cloud", desc: "Fast and light on memory. Your questions and answers are sent to Ollama’s servers and use your credits.", icon: "bolt", aria: "Use Ollama cloud models" },
+          { value: "cloud", title: "Groq cloud", desc: "Fast and light on memory. Your questions and answers are sent to Groq’s servers. Groq’s Free plan costs nothing but is rate-limited.", icon: "bolt", aria: "Use Groq cloud models" },
         ]} />
         {choice === "local" && <div className="row" style={{ marginTop: 14 }}><button className="btn primary" disabled={busy === "local"} onClick={() => void switchToLocal()}>Switch back to this computer</button><span className="muted small">Nothing else to set up. Your cloud settings are kept in case you come back.</span></div>}
       </div>
@@ -144,11 +145,12 @@ export default function AIModels() {
             <div className="card c-consent">
               <h2>Before you turn this on</h2>
               <div className="grid2" style={{ alignItems: "start" }}>
-                <div><h3>Sent to Ollama’s servers</h3><ul className="tight">{s.sent_to_cloud.map((x) => <li key={x}>{x}</li>)}</ul></div>
+                <div><h3>Sent to Groq’s servers</h3><ul className="tight">{s.sent_to_cloud.map((x) => <li key={x}>{x}</li>)}</ul></div>
                 <div><h3>Stays on this computer</h3><ul className="tight">{s.stays_local.map((x) => <li key={x}>{x}</li>)}</ul></div>
               </div>
+              <RetentionNote provider={s.provider} />
               <label className="check consent" style={{ marginTop: 12 }}><input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
-                <span>I understand my questions and answers will be sent to Ollama’s servers and that this uses my account’s credits.</span></label>
+                <span>I understand my questions and answers will be sent to Groq’s servers, and that Groq may keep request logs for up to 30 days.</span></label>
             </div>
           )}
 
@@ -160,9 +162,9 @@ export default function AIModels() {
           )}
 
           <div className="card c-key">
-            <div className="row between"><h2 style={{ margin: 0 }}>API key</h2>{s.key.set && <span className="badge ok"><Icon name="check" />{s.key.source === "environment" ? "from OLLAMA_API_KEY" : `saved ${s.key.hint}`}</span>}</div>
-            <p className="muted small" style={{ margin: "6px 0 12px" }}>Create a key at ollama.com/settings/keys. It is stored only in this computer’s local database and is never shown again.</p>
-            {s.key.source === "environment" ? <div className="notice info small" style={{ margin: 0 }}>Your key comes from the <span className="mono">OLLAMA_API_KEY</span> environment variable, so it can’t be changed or removed here.</div>
+            <div className="row between"><h2 style={{ margin: 0 }}>API key</h2>{s.key.set && <span className="badge ok"><Icon name="check" />{s.key.source === "environment" ? "from GROQ_API_KEY" : `saved ${s.key.hint}`}</span>}</div>
+            <p className="muted small" style={{ margin: "6px 0 12px" }}>Create a free key at <ExtLink href={s.provider.keys_url}>{s.provider.keys_url.replace(/^https?:\/\//, "")}</ExtLink>. It is stored only in this computer’s local database and is never shown again. You can also put it in <span className="mono">GROQ_API_KEY</span> in the <span className="mono">.env</span> file instead.</p>
+            {s.key.source === "environment" ? <div className="notice info small" style={{ margin: 0 }}>Your key comes from the <span className="mono">GROQ_API_KEY</span> environment variable, so it can’t be changed or removed here.</div>
               : s.key.set && !replacing ? (
                 <div className="row"><button className="btn" onClick={() => setReplacing(true)}>Replace key</button><button className="btn danger" onClick={() => setConfirmRemove(true)}><Icon name="trash" />Remove key</button></div>
               ) : (
@@ -180,11 +182,11 @@ export default function AIModels() {
           {s.key.set && (
             <div className="card c-test">
                 <h2>Test the connection</h2>
-                <p className="muted small" style={{ margin: "0 0 12px" }}>The first button only checks your key and lists the models you can use. It costs nothing. The second sends one tiny message (a few dozen tokens, a fraction of a cent).</p>
+                <p className="muted small" style={{ margin: "0 0 12px" }}>The first button only checks your key and lists the models you can use. It costs nothing. The second sends one tiny message (a few dozen tokens, it uses a tiny part of your rate limit).</p>
                 <div className="row">
                   <button className="btn primary" disabled={busy !== null || cool > 0} onClick={() => void runTest(false)}>{busy === "test" ? <span className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} /> : <Icon name="refresh" />}Test connection (free)</button>
                   <button className="btn" disabled={busy !== null || cool > 0} onClick={() => void runTest(true)}>Send one tiny test message</button>
-                  {cool > 0 && <span className="muted small">wait {cool} s (protects your credits)</span>}
+                  {cool > 0 && <span className="muted small">wait {cool} s (protects your rate limit)</span>}
                 </div>
                 {test && (
                   <div className={`notice ${test.ok ? "ok" : test.key_ok ? "warn" : "error"} small`} role="status" style={{ marginTop: 12, marginBottom: 0 }}>
@@ -204,7 +206,7 @@ export default function AIModels() {
               <h2>If a model fails</h2>
               <p className="muted small" style={{ margin: "0 0 12px" }}>What the app may do when the grader can’t answer. It never switches engines on its own.</p>
                 <div className="trows">
-                  <div className={`trow2 ${draft.use_fallback ? "on" : ""}`}><span className="ti"><Icon name="refresh" /></span><div className="t"><b>Use the fallback model if the grader fails</b><span>Tried once, only for grading and the report summary, and only for outages or an unknown model, never for a bad key or no credits.</span></div><Switch label="Use the fallback model" checked={draft.use_fallback} onChange={(v) => set("use_fallback", v)} /></div>
+                  <div className={`trow2 ${draft.use_fallback ? "on" : ""}`}><span className="ti"><Icon name="refresh" /></span><div className="t"><b>Use the fallback model if the grader fails</b><span>Tried once, only for grading and the report summary, and only for outages or an unknown model, never for a bad key or a reached rate limit.</span></div><Switch label="Use the fallback model" checked={draft.use_fallback} onChange={(v) => set("use_fallback", v)} /></div>
                   <div className={`trow2 ${draft.fallback_to_local ? "on" : ""}`}><span className="ti"><Icon name="shield" /></span><div className="t"><b>If the cloud can’t be reached, use my local model instead</b><span>Sends nothing to the cloud. It needs the local model installed, and the feedback says which model graded it.</span></div><Switch label="Fall back to the local model" checked={draft.fallback_to_local} onChange={(v) => set("fallback_to_local", v)} /></div>
                 </div>
             </div>
@@ -218,6 +220,7 @@ export default function AIModels() {
                 <ModelRow role="grader" title="Grader" desc={s.roles.grader} value={draft.grader_model} onChange={(v) => set("grader_model", v)} models={models} tested={!!test?.key_ok} prices={draft.prices} />
                 <ModelRow role="fallback" title="Fallback / second opinion" desc={s.roles.fallback} value={draft.fallback_model} onChange={(v) => set("fallback_model", v)} models={models} tested={!!test?.key_ok} prices={draft.prices} />
                 <ModelRow role="conversation" title="Conversation" desc={s.roles.conversation} value={draft.conversation_model} onChange={(v) => set("conversation_model", v)} models={models} tested={!!test?.key_ok} prices={draft.prices} />
+                <p className="muted small" style={{ margin: "12px 0 0" }}>Groq’s <b>Free plan</b> costs nothing. It is rate-limited per model: a small per-minute and a small daily allowance (shown in your Groq console). When one is reached, resume reading may pause and then continue, and grading asks you to retry after the reset time.</p>
                 {draft.use_fallback && normaliseModel(draft.fallback_model) === normaliseModel(draft.grader_model) && <div className="notice warn small" style={{ marginTop: 10 }}>The fallback is the same model as the grader, so it can’t take over when the grader fails. Pick a different fallback.</div>}
               </div>
             </div>
@@ -228,7 +231,8 @@ export default function AIModels() {
       {cloudView && s.key.set && (
         <div className="ai-wide">
               <div className="card">
-                <h2>Spending limit and prices</h2>
+                <h2>Estimated spending limit and prices</h2>
+                <p className="muted small" style={{ margin: "-4px 0 12px" }}>On the Free plan nothing is billed. These figures are <b>estimates of what the same use would cost on a paid plan</b>, so you can set a limit the app respects.</p>
                 <div className="spend-cols">
                   <div>
                 <div className="spend-grid">
@@ -264,7 +268,7 @@ export default function AIModels() {
                     );
                   })}</tbody>
                 </table></div>
-                <p className="muted small" style={{ marginTop: 12 }}>Defaults are the rates on Ollama’s pricing page (read 31 Oct 2026); numbers you change are kept. DeepSeek v4.1 Flash is half price outside 12:00–18:00 UTC on weekdays. Costs shown in the app are <b>estimates</b> (reasoning tokens and cached input may be billed differently); ollama.com/settings/usage is the source of truth.</p>
+                <p className="muted small" style={{ marginTop: 12 }}>Defaults are Groq’s listed rates for these two models; numbers you change are kept. Costs shown in the app are <b>estimates</b> (reasoning tokens and cached input may be billed differently); your Groq console is the source of truth for usage and limits.</p>
                   </div>
                 </div>
               </div>

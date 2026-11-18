@@ -59,6 +59,13 @@ def _env_float(name: str, default: float) -> float:
         return default
 
 
+# The cloud provider's addresses. They exist ONLY here (tests/test_local_only.py enforces it): the API base below is contacted only
+# after the user switches to cloud mode and consents; the two pages are links the Settings page shows for the user to click.
+CLOUD_API_URL = "https://api.groq.com/openai/v1"
+CLOUD_KEYS_URL = "https://console.groq.com/keys"
+CLOUD_DATA_URL = "https://console.groq.com/docs/your-data"
+
+
 @dataclass(frozen=True)
 class Settings:
     host: str = "127.0.0.1"
@@ -81,10 +88,11 @@ class Settings:
     audio_cache_mb: int = 200
     stt_enabled: bool = True
     api_docs: bool = False                     # /api/docs (Swagger UI) loads its JS/CSS from a CDN, so it is off unless API_DOCS=1
-    cloud_url: str = "https://ollama.com"       # Ollama cloud API (used ONLY when the user switches to cloud mode and consents)
+    cloud_url: str = CLOUD_API_URL              # Groq API (used ONLY when the user switches to cloud mode and consents)
     cloud_timeout_s: int = 150
     cloud_idle_timeout_s: int = 90
     cloud_max_tokens: int = 3000                # reasoning models spend part of this on thinking, so it is larger than the local cap
+    cloud_reasoning_effort: str = "low"         # low | medium | high: how much a gpt-oss model reasons before answering (more = slower, more tokens)
     resume_max_mb: int = 10                     # largest resume PDF accepted
     resume_max_pages: int = 15                  # longest resume PDF accepted
     ocr_enabled: bool = True                    # read scanned (image-only) pages with Tesseract when it is installed
@@ -124,9 +132,12 @@ class Settings:
                 f"Refusing OLLAMA_HOST_URL={ollama!r}: only loopback hosts are allowed so interview "
                 "content never leaves this machine."
             )
-        cloud_url = os.environ.get("OLLAMA_CLOUD_URL", "https://ollama.com").strip().rstrip("/")
+        cloud_url = os.environ.get("GROQ_BASE_URL", cls.cloud_url).strip().rstrip("/")
         if not (cloud_url.startswith("https://") or (cloud_url.startswith("http://") and is_loopback_url(cloud_url))):
-            raise RuntimeError("OLLAMA_CLOUD_URL must be https:// (plain http is only accepted for a loopback test server).")
+            raise RuntimeError("GROQ_BASE_URL must be https:// (plain http is only accepted for a loopback test server).")
+        effort = os.environ.get("CLOUD_REASONING_EFFORT", "low").strip().lower()
+        if effort not in ("low", "medium", "high"):
+            raise RuntimeError("CLOUD_REASONING_EFFORT must be low, medium or high.")
         data_dir = Path(os.environ.get("DATA_DIR", ROOT / "data")).expanduser()
         provider = os.environ.get("TTS_PROVIDER", "auto").strip().lower() or "auto"
         if provider not in TTS_PROVIDERS:
@@ -155,6 +166,7 @@ class Settings:
             cloud_timeout_s=_env_int("CLOUD_TIMEOUT_S", 150),
             cloud_idle_timeout_s=_env_int("CLOUD_IDLE_TIMEOUT_S", 90),
             cloud_max_tokens=_env_int("CLOUD_MAX_TOKENS", 3000),
+            cloud_reasoning_effort=effort,
             resume_max_mb=max(1, min(_env_int("RESUME_MAX_MB", 10), 50)),
             resume_max_pages=max(1, min(_env_int("RESUME_MAX_PAGES", 15), 60)),
             ocr_enabled=os.environ.get("OCR_ENABLED", "1") != "0",

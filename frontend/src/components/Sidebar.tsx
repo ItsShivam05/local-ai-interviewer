@@ -60,7 +60,7 @@ export default function Sidebar({ route, collapsed, onToggle, mobileOpen, onClos
   const spent = health?.ai.budget?.today;
   const checks: [string, boolean | null, string][] = health ? [
     ...(cloud ? [
-      ["Ollama cloud", health.ai.ready, health.ai.ready ? `grader: ${health.ai.grader_model}` : "add your API key in Settings → AI models"] as [string, boolean | null, string],
+      ["Groq cloud", health.ai.ready, health.ai.ready ? `grader: ${health.ai.grader_model}` : "add your API key in Settings → AI models"] as [string, boolean | null, string],
       [`Spent today ${fmtUsd(spent?.spent_usd ?? 0)}`, spent?.reached ? false : true, spent?.limit_usd != null ? `limit ${fmtUsd(spent.limit_usd)} per day` : "no daily limit set"] as [string, boolean | null, string],
       ["Ollama (local, optional)", health.ollama.ok ? true : null, health.ollama.error ?? `v${health.ollama.version}`] as [string, boolean | null, string],
     ] : [

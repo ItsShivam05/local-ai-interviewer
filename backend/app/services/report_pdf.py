@@ -348,7 +348,7 @@ def render_pdf(r: dict[str, Any]) -> bytes:
                 extras.append(f"Evaluation note ({ev.get('confidence', 'medium')} confidence): {ev['uncertainty_note']}")
             gb = ev.get("graded_by")
             if gb and gb.get("model"):
-                extras.append(f"Graded by {gb['model']} ({'Ollama cloud' if gb.get('provider') == 'cloud' else 'on this computer'})")
+                extras.append(f"Graded by {gb['model']} ({'Groq cloud' if gb.get('provider') == 'cloud' else 'on this computer'})")
             if extras:
                 story.append(Spacer(1, 3))
                 story.append(Paragraph(para_text(" | ".join(extras)), st["small"]))

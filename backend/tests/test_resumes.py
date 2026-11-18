@@ -442,6 +442,33 @@ def test_cloud_mode_reads_locally_but_sends_nothing_until_consent(cloud_client, 
     assert no["status"] == "failed" and no["error_code"] == "cloud_declined" and len(cloud_fake.chats) == 1
 
 
+def test_resume_reading_waits_out_a_short_rate_limit_and_stops_at_one_it_cannot_wait_for(cloud_client, cloud_fake, monkeypatch):
+    """Groq's free plan allows few tokens a minute, and a resume is several requests in a row."""
+    from app.services import resumes as resumes_mod
+    from fakecloud import RateLimited
+    monkeypatch.setattr(resumes_mod, "chunk_text", lambda text: ["part one", "part two", "part three", "part four"])
+    enable_cloud(cloud_client)
+    r = upload(cloud_client, text_pdf()).json()
+    # part 1 answers; part 2 is limited for 20 s (waited out, then answers); part 3 is limited for two hours; part 4 must never be asked
+    cloud_fake.replies = [profile_reply(), RateLimited(retry_after=20), profile_reply(), RateLimited(retry_after=7200)]
+    done = cloud_client.post(f"/api/resumes/{r['id']}/consent", json={"accept": True}).json()
+    assert len(cloud_fake.chats) == 4                                                    # 1 + (limited, retried) + limited: no request for part 4
+    slept = cloud_client.app.state.c.cloud.slept
+    assert len(slept) == 1 and 20 <= slept[0] <= 21
+    assert done["status"] == "ready" and done["warnings"] >= 1                            # what was read is kept, and the gap is announced
+    assert any("2 of 4 parts" in w for w in cloud_client.get(f"/api/resumes/{r['id']}").json()["profile"]["parse_warnings"])
+
+
+def test_a_resume_that_hits_the_limit_on_its_first_part_fails_with_the_reset_time(cloud_client, cloud_fake):
+    from fakecloud import RateLimited
+    enable_cloud(cloud_client)
+    r = upload(cloud_client, text_pdf()).json()
+    cloud_fake.replies = [RateLimited(retry_after=7200)]
+    done = cloud_client.post(f"/api/resumes/{r['id']}/consent", json={"accept": True}).json()
+    assert done["status"] == "failed" and "about 2 hours" in done["error_message"] and "Try again" in done["error_message"]
+    assert len(cloud_fake.chats) == 1 and cloud_client.get(f"/api/resumes/{r['id']}/text").json()["raw_text"]     # the text is kept
+
+
 def test_local_mode_resume_traffic_only_goes_to_loopback(client, fake):
     reply_for_parts(fake)
     upload(client, text_pdf())

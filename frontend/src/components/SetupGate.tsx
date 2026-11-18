@@ -110,7 +110,7 @@ export default function SetupGate({ initial, onContinue, onCloud, manual = false
                 <button className="btn" onClick={onCloud}><Icon name="bolt" />Use cloud models instead</button>
                 <button className="btn ghost" onClick={onContinue}>Continue anyway</button></>}
         </div>
-        {!report.ready && <p className="muted small gate-note">Cloud models need no download: add an Ollama API key in Settings and your questions are graded on Ollama’s servers (your voice stays on this computer).</p>}
+        {!report.ready && <p className="muted small gate-note">Cloud models need no download: add a free Groq API key in Settings and your questions are graded on Groq’s servers (your voice stays on this computer).</p>}
       </div>
     </main>
   );

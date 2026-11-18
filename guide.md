@@ -157,18 +157,20 @@ Click **Model usage** in the left sidebar (under *Models*, above *Local services
 
 ---
 
-## 4b. Optional: use Ollama's cloud models instead of your own computer
+## 4b. Optional: use Groq's cloud models instead of your own computer
 
-If your laptop is slow or short on memory, you can let Ollama's servers do the grading. It costs a small amount of money (a graded answer is roughly a twentieth of a cent) and it is **off by default** — nothing is sent anywhere unless you do this:
+If your laptop is slow or short on memory, you can let Groq's servers do the grading with your own free Groq key. It is **off by default** — nothing is sent anywhere unless you do this:
 
-1. Make an API key at **ollama.com/settings/keys**.
-2. In the app: **Settings → AI models → Ollama cloud models**, paste the key, tick the box that says you understand your answers will be sent to Ollama, and press **Use cloud models**.
-3. Press **Test connection (free)**. It only checks the key and lists the models — it costs nothing.
-4. (Optional) Set a **daily limit** in dollars. The app stops asking the cloud when it is reached, and keeps your answer so you can retry later.
+1. Make a free API key at **console.groq.com/keys**.
+2. In the app: **Settings → AI models**, paste the key, read the notice and tick the box that says you understand your answers will be sent to Groq, then switch to cloud models.
+3. Press **Test connection (free)**. It only checks the key and lists the models — it uses nothing.
+4. (Optional) Set a **daily limit** in dollars. On Groq's free plan you are not charged, so the dollar figures are only what the same use would cost on a paid plan; the limit still stops calls when reached.
 
-Your voice never leaves the computer — only the written text of the question and your answer. The sidebar says **Cloud AI · voice stays local** while this is on. **Model usage** shows every cloud call and its estimated cost (estimates — Ollama's own page is the real bill). To go back, choose **On this computer** in the same place.
-
----
+Good to know:
+* The free plan has **small limits** (a few answers per minute, several dozen a day). If you hit one, the app waits a little and continues; if the wait is long it tells you when you can retry. Your answer is always kept.
+* Groq says it does not keep your text, but may log requests for up to 30 days to fix problems or investigate abuse.
+* Your voice never leaves the computer — only the written text of the question and your answer. The sidebar says **Cloud AI · voice stays local** while this is on. To go back, choose **On this computer** in the same place.
+* Used Ollama's cloud before? After updating, the app is back on your own computer and the old key is removed. Add a Groq key to use the cloud again.
 
 ## 5. Tips for the best results
 
@@ -198,7 +200,7 @@ Your voice never leaves the computer — only the written text of the question a
 6. **Keep it private:** the site only listens on your own computer (`127.0.0.1`). Don't change `APP_HOST` in `.env`.
 7. After a page refresh Chrome blocks audio autoplay — just press ▶ to hear the question.
 8. The internet is needed only for first-time downloads (Ollama, models, dependencies). Normal use works fully offline — unless you turn on cloud models (section 4b), which needs internet while it is on.
-9. **If you use a cloud key, treat the `data` folder as private:** the key is saved inside it. Don't share it or post it online. (Or put the key in `.env` as `OLLAMA_API_KEY` instead.)
+9. **If you use a cloud key, treat the `data` folder as private:** the key is saved inside it. Don't share it or post it online. (Or put the key in `.env` as `GROQ_API_KEY` instead.)
 
 ---
 

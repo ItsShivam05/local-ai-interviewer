@@ -8,6 +8,20 @@ No version has been tagged or released on GitHub yet.
 
 Planned as 2.0.0 (database schema v6; scores of categorised questions change, see *Changed*).
 
+### Changed: cloud mode now uses Groq (action needed if you used cloud mode)
+- The optional cloud mode moved from Ollama cloud (which ended free usage on 9 Nov 2026) to the **Groq API** with your own key
+  (`console.groq.com/keys`). Defaults: grader `openai/gpt-oss-120b`; fallback and conversation `openai/gpt-oss-20b`; other model ids
+  can still be typed in. Local mode, the local Ollama model and voice are unchanged.
+- **Upgrade note:** the first start after upgrading returns the app to local mode, deletes the saved Ollama cloud key and clears your
+  cloud consent (including each resume's). To use cloud mode again, add a Groq key and agree to the new notice. Budgets, history and
+  reports are kept. `OLLAMA_API_KEY` / `OLLAMA_CLOUD_URL` are ignored; use `GROQ_API_KEY` / `GROQ_BASE_URL`.
+- Groq's Free plan is rate-limited, not billed (read 2026-11-18 for both default models: 30 requests and 8,000 tokens a minute; 1,000
+  requests and 200,000 tokens a day). On a rate limit the app waits once if the reply can still arrive in time, otherwise it says when
+  the limit resets. Cost figures are estimates of what the same use would cost on a paid plan.
+- The consent notice names Groq and states that Groq may log requests for up to 30 days.
+- New setting `CLOUD_REASONING_EFFORT` (`low` default, `medium`, `high`).
+- New opt-in test of the real API: runs only when `GROQ_API_KEY` is set (`backend/tests/integration/test_real_groq.py`).
+
 ### Interface
 - Setup: one-click presets (Quick practice, Full mock, Resume round) that fill the settings below; the voice picker shows the chosen
   voice and opens the full list only on "Change voice" (names no longer cut off).

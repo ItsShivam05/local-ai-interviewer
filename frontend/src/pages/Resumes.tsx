@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, resumesApi, uploadResume } from "../api";
 import Icon from "../components/Icon";
+import { RetentionNote } from "../components/CloudDisclosure";
 import { Confirm, ErrorNotice, Modal, fmtShort, useAsync, useToast } from "../components/ui";
 import { INTENT_EVENT, setIntent, takeIntent } from "../intent";
 import { anyWorking, awaitingConsent, checkPdf, fmtBytes, isWorking, looksLikePdf, methodLabel, stageText, statusChip, steps } from "../resumeHelpers";
@@ -19,17 +20,20 @@ export function practice(id: number) {
 export function PrivacyLine({ cloud }: { cloud: boolean }) {
   return (
     <p className="rz-privacy"><Icon name={cloud ? "cloud" : "shield"} />
-      {cloud ? "Cloud mode is on: the text is sent to Ollama cloud to organise it – you will be asked first. The PDF itself stays on this computer."
+      {cloud ? "Cloud mode is on: the text is sent to Groq’s servers to organise it – you will be asked first. The PDF itself stays on this computer."
         : "Stays on this computer. Your resume is read and organised by the local model; nothing is uploaded anywhere."}</p>
   );
 }
 
 export function ConsentDialog({ names, onAnswer, busy }: { names: string[]; onAnswer: (accept: boolean) => void; busy?: boolean }) {
+  const ai = useAsync(() => api.ai(), []);
+  const provider = ai.data?.provider;
   return (
-    <Modal title="Send to Ollama cloud?" onClose={() => onAnswer(false)} narrow>
+    <Modal title="Send to Groq cloud?" onClose={() => onAnswer(false)} narrow>
       <p className="muted" style={{ marginTop: 0 }}>Cloud mode is on. To organise {names.length === 1 ? `“${names[0]}”` : `${names.length} resumes`} and write questions about {names.length === 1 ? "it" : "them"}, the
-        extracted text is sent to Ollama’s servers. The PDF itself stays on this computer.</p>
-      <p className="muted small">Prefer to keep it local? Switch to <b>On this computer</b> in Settings → AI models and press Try again.</p>
+        extracted text is sent to <b>Groq’s servers</b>. The PDF itself stays on this computer.</p>
+      {provider && <RetentionNote provider={provider} />}
+      <p className="muted small" style={{ marginTop: 12 }}>Prefer to keep it local? Switch to <b>On this computer</b> in Settings → AI models and press Try again.</p>
       <div className="row" style={{ justifyContent: "flex-end" }}>
         <button className="btn" onClick={() => onAnswer(false)} disabled={busy}>Not now</button>
         <button className="btn primary" onClick={() => onAnswer(true)} disabled={busy} autoFocus>Send to the cloud</button>
@@ -149,7 +153,7 @@ export function UploadDialog({ onClose, onChanged, cloud, maxMb = MAX_MB_DEFAULT
           <Stepper r={resume} uploading={false} percent={100} />
           {isWorking(resume) && <p className="muted small" style={{ margin: 0 }}>You can close this window: reading continues and the card shows its progress.</p>}
           {awaitingConsent(resume) && (
-            <div className="notice info" style={{ margin: 0 }}><b>Cloud mode is on.</b> The text was read on this computer. To organise it, the text is sent to Ollama’s servers (the PDF stays here).
+            <div className="notice info" style={{ margin: 0 }}><b>Cloud mode is on.</b> The text was read on this computer. To organise it, the text is sent to Groq’s servers (the PDF stays here).
               <div className="row" style={{ marginTop: 10 }}><button className="btn primary" disabled={consentBusy} onClick={() => void answerConsent(true)}>Send to the cloud</button><button className="btn" disabled={consentBusy} onClick={() => void answerConsent(false)}>Not now</button></div></div>
           )}
           {resume.status === "ready" && (
@@ -191,7 +195,7 @@ function ResumeCard({ r, onDelete, onChanged }: { r: ResumeSummary; onDelete: (r
       {working && (
         <div className="rz-work" role="status"><div className="meter rz-indet" aria-hidden><i /></div><span className="small">{stageText(r)}</span></div>
       )}
-      {awaitingConsent(r) && <div className="notice info small" style={{ margin: 0 }}>Waiting for your OK to send the text to Ollama cloud. <a href={`#/resumes/${r.id}`}>Open it</a></div>}
+      {awaitingConsent(r) && <div className="notice info small" style={{ margin: 0 }}>Waiting for your OK to send the text to Groq cloud. <a href={`#/resumes/${r.id}`}>Open it</a></div>}
       {r.status === "failed" && <p className="rz-err small">{r.error_message}</p>}
       {r.skills_preview.length > 0 && <div className="rz-skills">{r.skills_preview.map((s) => <span key={s} className="rz-tag">{s}</span>)}</div>}
       <div className="rz-card-f">

@@ -58,14 +58,14 @@ export default function SettingsPage() {
       {tab === "services" && (
         <>
           <div className="card">
-            <div className="row between" style={{ marginBottom: 14 }}><div><h2 style={{ margin: 0 }}>Local services</h2><div className="muted small">{cloudOn ? "Grading runs on Ollama’s cloud. Voice and speech recognition run on this computer." : "Everything runs on this computer."}</div></div>
+            <div className="row between" style={{ marginBottom: 14 }}><div><h2 style={{ margin: 0 }}>Local services</h2><div className="muted small">{cloudOn ? "Grading runs on Groq’s cloud. Voice and speech recognition run on this computer." : "Everything runs on this computer."}</div></div>
               <div className="row"><a className="btn" href="#/welcome">Setup check</a><RefreshButton onRefresh={async () => { force.current = true; await health.reload(); }} /></div></div>
             <ErrorNotice error={health.error} />
             {!h && health.loading && !health.error && <CardsSkeleton n={1} label="Checking local services…" />}
             {h && <div className="svc-grid">
               {svc("cpu", cloudOn ? "Ollama (local, optional)" : "Ollama", h.ollama.ok ? `v${h.ollama.version} · ${h.ollama.host}` : h.ollama.error ?? "not reachable", h.ollama.ok ? "ok" : cloudOn ? "warn" : "bad")}
               {cloudOn
-                ? svc("bolt", `Ollama cloud · ${h.ai.grader_model}`, h.ai.ready ? "API key saved · you agreed to send text to the cloud" : "add your API key in the AI models tab", h.ai.ready ? "ok" : "bad")
+                ? svc("bolt", `Groq cloud · ${h.ai.grader_model}`, h.ai.ready ? "API key saved · you agreed to send text to the cloud" : "add your API key in the AI models tab", h.ai.ready ? "ok" : "bad")
                 : svc("sparkle", `Interview model · ${h.llm.model}`, h.llm.error ?? (h.llm.loaded ? "installed · loaded in memory" : "installed · loads on first use"), h.llm.installed ? "ok" : "bad")}
               {h.tts.engine === "system"
                 ? svc("voice", "Speech · system voices", sysVoices === null ? "checking…" : sysVoices.length ? `${sysVoices.length} offline voices on this computer` : "no offline voice found — questions will be shown as text", sysVoices === null || sysVoices.length ? "ok" : "warn")
@@ -79,7 +79,7 @@ export default function SettingsPage() {
             <h2>Privacy</h2>
             <ul className="privacy">
               {(cloudOn
-                ? ["Questions, answers and reports are stored in a local SQLite file.", "Cloud mode is ON: your questions, answers and rubrics are sent to Ollama’s servers for grading. Voice and speech recognition stay on this computer.", "Your Ollama API key is kept only in this computer’s local database and is never shown again.", "No analytics or telemetry. The server only accepts requests from this computer."]
+                ? ["Questions, answers and reports are stored in a local SQLite file.", "Cloud mode is ON: your questions, answers and rubrics are sent to Groq’s servers for grading. Voice and speech recognition stay on this computer.", "Your Groq API key is kept only in this computer’s local database and is never shown again.", "No analytics or telemetry. The server only accepts requests from this computer."]
                 : ["Questions, answers and reports stay in a local SQLite file.", "No accounts, API keys, analytics or telemetry. Cloud AI is off: nothing is sent to any server.", "The server only accepts requests from this computer.", "Voice, evaluation and transcription run on-device and work offline."]
               ).map((t) => <li key={t}><Icon name={cloudOn && t.startsWith("Cloud mode") ? "alert" : "shield"} />{t}</li>)}
             </ul>
@@ -140,7 +140,7 @@ function BackupCard() {
   return (
     <div className="card" style={{ maxWidth: 560 }} data-testid="backup-card">
       <h2>Backup</h2>
-      <p className="muted" style={{ marginTop: -4 }}>Download a copy of everything stored on this computer: question sets, interviews, answers, reports, resume text and your saved Ollama API key.</p>
+      <p className="muted" style={{ marginTop: -4 }}>Download a copy of everything stored on this computer: question sets, interviews, answers, reports, resume text and your saved Groq API key.</p>
       <div className="notice warn small" role="note" style={{ marginTop: 0 }}><b>Keep this file private.</b> It contains your answers, resume text and API key. It is saved only to this computer, and nothing is uploaded. Do not share it; use the share-safe export on a report instead.</div>
       <a className="btn primary" href={api.backupUrl()} download><Icon name="download" />Download a backup</a>
     </div>

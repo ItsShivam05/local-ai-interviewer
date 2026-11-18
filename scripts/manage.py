@@ -398,7 +398,7 @@ CLOUD_HINT = "Cloud mode (Settings -> AI models) works without it."
 
 def ensure_ollama() -> bool:
     """Start the local Ollama if there is one. It is OPTIONAL: it runs the local model and the Phonon voice, but the app also works with
-    Ollama's cloud models (and this computer's own voices), so a missing or broken Ollama is a warning, never a reason to refuse to start."""
+    cloud models (and this computer's own voices), so a missing or broken Ollama is a warning, never a reason to refuse to start."""
     if ollama_up():
         ok("Ollama is running")
         return True

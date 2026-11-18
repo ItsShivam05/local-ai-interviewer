@@ -3,7 +3,7 @@
 import { BASE, check, clickText, launch, reportIssues, sleep, startBackend } from "./lib.mjs";
 import { seedHistory } from "./seed.mjs";
 
-const be = await startBackend({ OLLAMA_API_KEY: "" });
+const be = await startBackend({ GROQ_API_KEY: "" });
 seedHistory(be.dataDir);
 const { browser, page, issues } = await launch({ width: 1280, height: 820 });
 const api = (path, init) => fetch(BASE + path, { headers: { "content-type": "application/json" }, ...init }).then((r) => r.json());

@@ -177,7 +177,7 @@ export default function Interview({ id }: { id: number }) {
       <div className="fs">
         <div className="fs-top">
           <a className="btn exit" href="#/setup" title="Your progress is saved; continue it any time from the Interview page"><Icon name="arrowl" />Exit Interview</a>
-          <div className="title">{st.title}{cloudAI && <span className="badge accent" style={{ marginLeft: 8 }} title="Your questions and answers are graded by Ollama's cloud models. Your voice stays on this computer."><Icon name="cloud" />Cloud AI</span>}</div>
+          <div className="title">{st.title}{cloudAI && <span className="badge accent" style={{ marginLeft: 8 }} title="Your questions and answers are graded by Groq’s cloud models. Your voice stays on this computer."><Icon name="cloud" />Cloud AI</span>}</div>
           <button className="prog" onClick={() => setShowProgress(true)} aria-label="Show interview progress">
             <div className="lbl">{where}</div>
             <div className="pbar" role="progressbar" aria-valuemin={0} aria-valuemax={p.total} aria-valuenow={p.finished}><div className="bar"><i style={{ width: `${pct}%` }} /></div><span>{pct}%</span></div>

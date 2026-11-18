@@ -134,7 +134,7 @@ describe("questions, mixing and the session summary", () => {
     expect(generationRequests(8, "overview")).toBe(3);
     expect(generationRequests(9, "deep")).toBe(2);
     expect(generationMinutes(8, "standard", false)).toBeGreaterThanOrEqual(1);
-    const cfg = { grader_model: "gpt-oss:120b", prices: { "gpt-oss:120b": { input_per_m: 0.15, output_per_m: 0.6, offpeak_input_per_m: null, offpeak_output_per_m: null } } } as unknown as AIConfig;
+    const cfg = { grader_model: "openai/gpt-oss-120b", prices: { "openai/gpt-oss-120b": { input_per_m: 0.15, output_per_m: 0.6, offpeak_input_per_m: null, offpeak_output_per_m: null } } } as unknown as AIConfig;
     expect(generationCost(cfg, 8, "overview")).toBeCloseTo((3 * (1600 * 0.15 + 1100 * 0.6)) / 1e6, 10);
     expect(generationCost({ ...cfg, grader_model: "unknown" }, 8, "overview")).toBeNull();
   });

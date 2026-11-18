@@ -198,7 +198,7 @@ def state(client, iid: int) -> dict:
     return client.get(f"/api/interviews/{iid}").json()
 
 
-# ---------------------------------------------------------------- cloud mode (mock of Ollama cloud: no network, no credits)
+# ---------------------------------------------------------------- cloud mode (mock of the Groq API: no network, no account)
 from fakecloud import KEY as CLOUD_KEY, FakeCloud, make_cloud
 
 
@@ -212,7 +212,7 @@ def cloud_client(tmp_path, fake, cloud_fake):
     """A test client whose app has a mocked cloud attached. Still in LOCAL mode until a test switches it on."""
     s = make_settings(tmp_path)
     holder: dict = {}
-    cloud = make_cloud(s, cloud_fake, key_provider=lambda: holder["ai"].api_key())     # the key comes from the app's own store / OLLAMA_API_KEY, as in production
+    cloud = make_cloud(s, cloud_fake, key_provider=lambda: holder["ai"].api_key())     # the key comes from the app's own store / GROQ_API_KEY, as in production
     c = build_container(s, ollama=make_client_for(s, fake), executor=InlineExecutor(), cloud=cloud)
     holder["ai"] = c.ai
     return TestClient(create_app(s, c), base_url="http://127.0.0.1:3000")

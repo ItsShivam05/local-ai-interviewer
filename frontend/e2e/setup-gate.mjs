@@ -6,7 +6,7 @@ import { SWEEP } from "./sweep-lib.mjs";
 
 const fo = await startFakeOllama({ models: [], pullSteps: 8, pullDelayMs: 300 });
 fo.state.up = false;                                           // Ollama is not running
-const be = await startBackend({ OLLAMA_HOST_URL: fo.url, OLLAMA_API_KEY: "" });
+const be = await startBackend({ OLLAMA_HOST_URL: fo.url, GROQ_API_KEY: "" });
 const { browser, page, issues } = await launch({ width: 1280, height: 900, gate: true });
 const api = async (p) => (await fetch(`${BASE}${p}`)).json();
 const rowOf = (label) => page.evaluate((l) => { const r = [...document.querySelectorAll(".gate-row")].find((x) => x.querySelector("b")?.textContent.includes(l)); return r ? { text: r.innerText.replace(/\s+/g, " "), cls: r.className, buttons: [...r.querySelectorAll("button")].map((b) => b.textContent.trim()) } : null; }, label);

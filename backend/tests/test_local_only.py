@@ -56,9 +56,10 @@ def test_all_outbound_traffic_goes_only_to_the_ollama_host(client, set_id, fake)
 def test_source_has_no_hardcoded_external_urls():
     """Backend and frontend sources may only reference loopback URLs (plus XML/W3C namespace strings)."""
     allowed = re.compile(r"https?://(127\.0\.0\.1|localhost|\[::1\]|www\.w3\.org)")
-    # The ONE deliberate exception: Ollama's cloud address, which exists only so the user can opt in to cloud mode (Settings -> AI models).
-    # It must live in config.py and nowhere else, so nothing can quietly talk to another host.
-    cloud_exception = ("backend/app/config.py", "https://ollama.com")
+    # The ONE deliberate exception: the cloud provider's addresses (Groq), which exist only so the user can opt in to cloud mode
+    # (Settings -> AI models): the API base, and the two pages the Settings page links to (create a key, data policy).
+    # They must live in config.py and nowhere else, so nothing can quietly talk to another host.
+    cloud_exceptions = {("backend/app/config.py", u) for u in ("https://api.groq.com/openai/v1", "https://console.groq.com/keys", "https://console.groq.com/docs/your-data")}
     # Documentation links the setup screen shows ("install Ollama / Python / Node here"). The app never requests them; the user may click.
     help_links = {"https://ollama.com/download", "https://ollama.com/install.sh", "https://www.python.org/downloads/", "https://nodejs.org/"}
     offenders = []
@@ -70,7 +71,7 @@ def test_source_has_no_hardcoded_external_urls():
         for n, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
             for m in re.finditer(r"https?://[^\s\"')>]+", line):
                 url = m.group(0).rstrip(".,;:|")
-                if allowed.match(m.group(0)) or (f.relative_to(ROOT).as_posix(), m.group(0).rstrip(".,;:")) == cloud_exception \
+                if allowed.match(m.group(0)) or (f.relative_to(ROOT).as_posix(), m.group(0).rstrip(".,;:")) in cloud_exceptions \
                         or (f.relative_to(ROOT).as_posix() == "backend/app/services/setup_check.py" and url in help_links):
                     continue
                 offenders.append(f"{f.relative_to(ROOT)}:{n}: {m.group(0)}")
@@ -97,24 +98,22 @@ def test_dotenv_example_loads_cleanly(tmp_path, monkeypatch):
 def test_the_cloud_address_exists_in_exactly_one_place_and_is_https():
     from app.config import Settings
 
-    assert Settings().cloud_url == "https://ollama.com"
-    def without_help_links(text: str) -> str:        # the setup screen's "install Ollama" documentation links are not the cloud address
-        return text.replace("https://ollama.com/download", "").replace("https://ollama.com/install.sh", "")
-
-    hits = [f.relative_to(ROOT).as_posix() for f in (ROOT / "backend" / "app").rglob("*.py") if "https://ollama.com" in without_help_links(f.read_text(encoding="utf-8"))]
-    assert hits == ["backend/app/config.py"], hits
+    assert Settings().cloud_url == "https://api.groq.com/openai/v1"
+    sources = list((ROOT / "backend" / "app").rglob("*.py")) + [p for p in (ROOT / "frontend" / "src").rglob("*") if p.suffix in {".ts", ".tsx"}]
+    hits = [f.relative_to(ROOT).as_posix() for f in sources if re.search(r"https?://[a-z0-9.]*groq\.com", f.read_text(encoding="utf-8"))]
+    assert hits == ["backend/app/config.py"], hits                # no other file can contact, or link to, the cloud provider
 
 
-@pytest.mark.parametrize("url, ok", [("https://ollama.com", True), ("https://proxy.example.com/ollama", True), ("http://127.0.0.1:9999", True),
-                                      ("http://localhost:9999", True), ("http://ollama.com", False), ("http://evil.example.com", False), ("ftp://x", False)])
+@pytest.mark.parametrize("url, ok", [("https://api.groq.com/openai/v1", True), ("https://proxy.example.com/groq", True), ("http://127.0.0.1:9999", True),
+                                      ("http://localhost:9999", True), ("http://api.groq.com/openai/v1", False), ("http://evil.example.com", False), ("ftp://x", False)])
 def test_cloud_url_must_be_https_unless_it_is_a_loopback_test_server(monkeypatch, url, ok):
     from app.config import Settings
 
-    monkeypatch.setenv("OLLAMA_CLOUD_URL", url)
+    monkeypatch.setenv("GROQ_BASE_URL", url)
     if ok:
         assert Settings.from_env().cloud_url == url
     else:
-        with pytest.raises(RuntimeError, match="OLLAMA_CLOUD_URL"):
+        with pytest.raises(RuntimeError, match="GROQ_BASE_URL"):
             Settings.from_env()
 
 

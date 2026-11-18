@@ -19,8 +19,8 @@ def test_testing_lists_models_and_spends_no_tokens(cloud_client, cloud_fake):
     r = cloud_client.post("/api/ai/test", json={})
     d = r.json()
     assert r.status_code == 200 and d["ok"] is True and d["key_ok"] is True and d["models"] == sorted(ALL_MODELS) and d["missing"] == {}
-    assert len(cloud_fake.tags_calls) == 1 and cloud_fake.chats == []                  # one free listing, no model call
-    assert d["message_test"] is None and "All three models are available" in d["message"]
+    assert len(cloud_fake.model_list_calls) == 1 and cloud_fake.chats == []                  # one free listing, no model call
+    assert d["message_test"] is None and "The models you chose are available" in d["message"]
 
 
 def test_a_second_click_within_seconds_is_refused_without_calling_the_cloud(cloud_client, cloud_fake):
@@ -35,22 +35,22 @@ def test_a_second_click_within_seconds_is_refused_without_calling_the_cloud(clou
 
 def test_missing_models_are_named_with_suggestions(cloud_client, cloud_fake):
     with_key(cloud_client)
-    cloud_fake.models = ["gpt-oss:120b", "deepseek-v4.1-flash", "gemma4:e4b", "gemma4:12b"]
+    cloud_fake.models = ["openai/gpt-oss-120b", "openai/gpt-oss-safeguard-20b", "qwen/qwen3.8-27b"]        # this key cannot use gpt-oss-20b
     d = cloud_client.post("/api/ai/test", json={}).json()
-    assert d["ok"] is False and d["key_ok"] is True and d["missing"] == {"conversation": "gemma4:31b"}
-    assert set(d["suggestions"]["gemma4:31b"]) <= {"gemma4:e4b", "gemma4:12b"} and d["suggestions"]["gemma4:31b"]
+    assert d["ok"] is False and d["key_ok"] is True and d["missing"] == {"fallback": "openai/gpt-oss-20b", "conversation": "openai/gpt-oss-20b"}
+    assert "openai/gpt-oss-safeguard-20b" in d["suggestions"]["openai/gpt-oss-20b"]
     assert "not found" in d["message"]
 
 
-def test_the_cli_spelling_of_a_model_name_counts_as_found(cloud_client, cloud_fake):
+def test_the_short_spelling_of_a_model_name_counts_as_found(cloud_client, cloud_fake):
     with_key(cloud_client)
-    cloud_client.put("/api/ai", json={"conversation_model": "gemma4:31b-cloud"})
+    cloud_client.put("/api/ai", json={"conversation_model": "GPT-OSS-20b"})
     assert cloud_client.post("/api/ai/test", json={}).json()["missing"] == {}
 
 
 def test_a_rejected_key_is_reported_clearly(cloud_client, cloud_fake):
     with_key(cloud_client)
-    cloud_fake.status_for_tags = 401
+    cloud_fake.status_for_models = 401
     d = cloud_client.post("/api/ai/test", json={}).json()
     assert d["ok"] is False and d["key_ok"] is False and d["code"] == "auth_failed" and "rejected the API key" in d["message"] and CLOUD_KEY not in str(d)
 
@@ -68,17 +68,19 @@ def test_a_real_test_message_is_only_sent_when_asked_and_is_tiny_and_tracked(clo
     with_key(cloud_client)
     cloud_fake.replies = ["ok"]
     d = cloud_client.post("/api/ai/test", json={"send_message": True}).json()
-    assert d["message_test"]["ok"] is True and d["message_test"]["model"] == "gpt-oss:120b" and d["message_test"]["text"] == "ok"
-    assert len(cloud_fake.chats) == 1 and cloud_fake.chats[0]["json"]["options"]["num_predict"] <= 64
+    assert d["message_test"]["ok"] is True and d["message_test"]["model"] == "openai/gpt-oss-120b" and d["message_test"]["text"] == "ok"
+    assert len(cloud_fake.chats) == 1 and cloud_fake.chats[0]["json"]["max_completion_tokens"] <= 200
     rec = cloud_client.app.state.c.usage.recent()[0]
     assert rec["purpose"] == "test" and rec["provider"] == "cloud" and rec["cost_usd"] == 0.000405      # it shows up in Model usage, with its cost
 
 
 def test_a_failing_test_message_is_reported_without_hiding_the_connection_result(cloud_client, cloud_fake):
     with_key(cloud_client)
-    cloud_fake.replies = [402]
+    from fakecloud import RateLimited
+    cloud_fake.replies = [RateLimited(retry_after=40)]
     d = cloud_client.post("/api/ai/test", json={"send_message": True}).json()
-    assert d["ok"] is True and d["message_test"]["ok"] is False and d["message_test"]["code"] == "no_credits"
+    assert d["ok"] is True and d["message_test"]["ok"] is False and d["message_test"]["code"] == "rate_limited"
+    assert "about 40 seconds" in d["message_test"]["message"] and len(cloud_fake.chats) == 1          # the test button never waits and retries
 
 
 def test_testing_needs_a_key_and_then_makes_no_request(cloud_client, cloud_fake):
@@ -118,7 +120,7 @@ def test_the_api_key_never_appears_in_any_response_log_or_export(cloud_client, c
 
 
 def test_a_key_from_the_environment_never_leaks_either(cloud_client, cloud_fake, monkeypatch, caplog):
-    monkeypatch.setenv("OLLAMA_API_KEY", "env-secret-key-9876543210")
+    monkeypatch.setenv("GROQ_API_KEY", "env-secret-key-9876543210")
     caplog.set_level(logging.DEBUG)
     cloud_client.put("/api/ai", json={"mode": "cloud", "acknowledge_cloud": True})
     sid = cloud_client.get("/api/sets").json()[0]["id"]
@@ -140,7 +142,7 @@ def test_in_cloud_mode_only_the_interview_text_goes_to_the_cloud_and_voice_stays
     assert len(cloud_fake.requests) == n and fake.tts_calls                                                    # the cloud saw nothing
     st = start_interview(cloud_client, sid, max_followups=0)
     answer(cloud_client, st, "UNIQUE-ANSWER-TEXT")
-    assert {r["host"] for r in cloud_fake.requests} == {"ollama.com"}
+    assert {r["host"] for r in cloud_fake.requests} == {"api.groq.com"}
     sent = json_dump(cloud_fake.chats[0]["json"])
     assert "UNIQUE-ANSWER-TEXT" in sent and "Question number 1?" in sent                                        # the interview text, as disclosed
     for secret in (CLOUD_KEY, str(cloud_client.app.state.c.settings.data_dir), "interviewer.sqlite3"):

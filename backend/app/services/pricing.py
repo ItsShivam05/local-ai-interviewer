@@ -1,10 +1,10 @@
-"""What a cloud call costs. Ollama cloud meters tokens per model (prices per million tokens).
-
-The app is built around three models, and these are their rates from Ollama's own "Model pricing" table (pay-as-you-go, read 31 Oct 2026,
-cross-checked against an independent tracker): gpt-oss:120b $0.15 in / $0.60 out; gemma4 $0.14 / $0.40 (one row for every size);
-DeepSeek v4.1 Flash $0.30 / $1.20, but HALF of that off-peak (every hour outside 12:00-18:00 UTC on weekdays, and all weekend).
-Cached input is cheaper still; replies do not say how much was cached, so estimates use the full input price (an upper bound).
+"""What a cloud call costs. Groq meters tokens per model (prices per million tokens).
+The app is built around two models, and these are their rates from Groq's own model table (console.groq.com/docs/models, read
+18 Nov 2026): openai/gpt-oss-120b $0.15 in / $0.60 out; openai/gpt-oss-20b $0.075 in / $0.30 out. On Groq's Free plan requests
+are not billed at all (they are rate-limited instead), so on that plan these figures only show what the same use WOULD cost.
+Cached input may be cheaper; replies do not say how much was cached, so estimates use the full input price (an upper bound).
 Prices change: every value is a default and can be edited in Settings -> AI models (edits are kept, defaults update with the app).
+The off-peak fields are kept for custom price entries (no default model uses them).
 """
 from __future__ import annotations
 
@@ -24,10 +24,10 @@ class ModelPrice(BaseModel):
     offpeak_output_per_m: Optional[float] = Field(default=None, ge=0, le=10_000)
 
 
+GRADER_MODEL, SMALL_MODEL = "openai/gpt-oss-120b", "openai/gpt-oss-20b"
 DEFAULT_PRICES: dict[str, ModelPrice] = {
-    "gpt-oss:120b": ModelPrice(input_per_m=0.15, output_per_m=0.6),
-    "deepseek-v4.1-flash": ModelPrice(input_per_m=0.30, output_per_m=1.20, offpeak_input_per_m=0.15, offpeak_output_per_m=0.60),
-    "gemma4:31b": ModelPrice(input_per_m=0.14, output_per_m=0.4),
+    GRADER_MODEL: ModelPrice(input_per_m=0.15, output_per_m=0.6),
+    SMALL_MODEL: ModelPrice(input_per_m=0.075, output_per_m=0.3),
 }
 
 
@@ -38,9 +38,10 @@ def is_peak(at: datetime) -> bool:
 
 
 def normalise(model: str) -> str:
-    """'gemma4:31b-cloud' / 'gemma4:31b:cloud' (the CLI spelling) and 'gemma4:31b' (the API spelling) are the same model."""
+    """One spelling per model, for comparing names and finding prices: lower case, and the short form 'gpt-oss-120b' is the same
+    model as Groq's full id 'openai/gpt-oss-120b'. Other ids (including custom ones) are only lower-cased."""
     m = model.strip().lower()
-    return re.sub(r"[-:]cloud$", "", m)
+    return f"openai/{m}" if re.fullmatch(r"gpt-oss-[a-z0-9.\-]+", m) else m
 
 
 def find_price(model: str, prices: dict[str, ModelPrice]) -> Optional[ModelPrice]:

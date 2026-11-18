@@ -49,7 +49,7 @@ body:
     id: mode
     attributes:
       label: AI mode and model
-      placeholder: "local qwen3.5:4b / cloud gpt-oss:120b ..."
+      placeholder: "local qwen3.5:4b / Groq cloud openai/gpt-oss-120b ..."
   - type: input
     id: browser
     attributes:

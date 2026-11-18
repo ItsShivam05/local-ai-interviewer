@@ -6,9 +6,9 @@ import { chipsFor, clip, questionNote } from "../scorecardHelpers";
 
 const P = (i: number, o: number, oi: number | null = null, oo: number | null = null): ModelPrice => ({ input_per_m: i, output_per_m: o, offpeak_input_per_m: oi, offpeak_output_per_m: oo });
 const CFG: AIConfig = {
-  mode: "cloud", cloud_consent_at: "x", grader_model: "gpt-oss:120b", fallback_model: "deepseek-v4.1-flash", use_fallback: true, conversation_model: "gemma4:31b", fallback_to_local: false,
+  mode: "cloud", cloud_consent_at: "x", grader_model: "openai/gpt-oss-120b", fallback_model: "openai/gpt-oss-20b", use_fallback: true, conversation_model: "openai/gpt-oss-20b", fallback_to_local: false,
   enforce_budget: true, daily_budget_usd: 1, total_budget_usd: null,
-  prices: { "gpt-oss:120b": P(0.15, 0.6), "deepseek-v4.1-flash": P(0.3, 1.2, 0.15, 0.6), "gemma4:31b": P(0.14, 0.4) },
+  prices: { "openai/gpt-oss-120b": P(0.15, 0.6), "openai/gpt-oss-20b": P(0.075, 0.3) },
 };
 
 describe("money formatting", () => {
@@ -22,10 +22,15 @@ describe("money formatting", () => {
 });
 
 describe("model names and prices", () => {
-  it("treats the CLI and API spellings as the same model", () => {
-    expect(normaliseModel("Gemma4:31b-cloud")).toBe("gemma4:31b");
-    expect(priceFor("gemma4:31b:cloud", CFG.prices)).toBe(CFG.prices["gemma4:31b"]);
+  it("treats the short and the full spelling as the same model, ignoring case", () => {
+    expect(normaliseModel("GPT-OSS-120b")).toBe("openai/gpt-oss-120b");
+    expect(normaliseModel(" openai/GPT-OSS-20B ")).toBe("openai/gpt-oss-20b");
+    expect(normaliseModel("llama-3.3-70b-versatile")).toBe("llama-3.3-70b-versatile");
+    expect(priceFor("gpt-oss-120b", CFG.prices)).toBe(CFG.prices["openai/gpt-oss-120b"]);
     expect(priceFor("kimi-k3", CFG.prices)).toBeNull();
+  });
+  it("no longer knows the old cloud suffixes", () => {
+    expect(normaliseModel("gpt-oss-120b-cloud")).not.toBe("openai/gpt-oss-120b");
   });
 });
 
@@ -38,9 +43,9 @@ describe("interview cost estimate", () => {
     expect(ten).toBeGreaterThan(one * 10);                              // follow-ups are counted
     expect(ten).toBeLessThan(0.1);                                      // a 10-question interview costs well under ten cents
   });
-  it("uses the dearer peak price of a model that has an off-peak discount", () => {
-    const ds = { ...CFG, grader_model: "deepseek-v4.1-flash" };
-    expect(estimateInterviewCost(ds, 5, 1)!).toBeGreaterThan(estimateInterviewCost(CFG, 5, 1)!);
+  it("uses the plain rate and prices the cheaper model lower", () => {
+    const small = { ...CFG, grader_model: "openai/gpt-oss-20b" };
+    expect(estimateInterviewCost(small, 5, 1)!).toBeLessThan(estimateInterviewCost(CFG, 5, 1)!);
   });
   it("says unknown, not free, when a model has no price", () => {
     expect(estimateInterviewCost({ ...CFG, grader_model: "kimi-k3" }, 3, 1)).toBeNull();
@@ -65,6 +70,7 @@ describe("API key draft", () => {
     expect(checkKeyDraft("abcd efgh1234").state).toBe("spaces");
     expect(checkKeyDraft("Bearer abcdefgh1234").state).toBe("ok");
     expect(checkKeyDraft("abcdefgh1234").text).toContain("12 characters");
+    expect(checkKeyDraft("").text).toContain("Groq");
   });
   it("never echoes the key itself in its message", () => {
     for (const k of ["secret-abcdef-123", "abc def", "x"]) expect(checkKeyDraft(k).text).not.toContain(k);
@@ -72,18 +78,18 @@ describe("API key draft", () => {
 });
 
 describe("model pickers", () => {
-  it("offers exactly the three supported models in every dropdown, marking each role's own recommendation", () => {
-    expect(SUPPORTED_MODELS).toEqual(["gpt-oss:120b", "deepseek-v4.1-flash", "gemma4:31b"]);
-    expect(RECOMMENDED).toEqual({ grader: "gpt-oss:120b", fallback: "deepseek-v4.1-flash", conversation: "gemma4:31b" });
-    expect(modelOptions("grader").map((o) => o.label)).toEqual(["gpt-oss:120b (recommended)", "deepseek-v4.1-flash", "gemma4:31b"]);
-    expect(modelOptions("fallback").map((o) => o.label)).toEqual(["gpt-oss:120b", "deepseek-v4.1-flash (recommended)", "gemma4:31b"]);
-    expect(modelOptions("conversation").map((o) => o.label)).toEqual(["gpt-oss:120b", "deepseek-v4.1-flash", "gemma4:31b (recommended)"]);
+  it("offers exactly the two supported models in every dropdown, marking each role's own recommendation", () => {
+    expect(SUPPORTED_MODELS).toEqual(["openai/gpt-oss-120b", "openai/gpt-oss-20b"]);
+    expect(RECOMMENDED).toEqual({ grader: "openai/gpt-oss-120b", fallback: "openai/gpt-oss-20b", conversation: "openai/gpt-oss-20b" });
+    expect(modelOptions("grader").map((o) => o.label)).toEqual(["openai/gpt-oss-120b (recommended)", "openai/gpt-oss-20b"]);
+    expect(modelOptions("fallback").map((o) => o.label)).toEqual(["openai/gpt-oss-120b", "openai/gpt-oss-20b (recommended)"]);
+    expect(modelOptions("conversation").map((o) => o.label)).toEqual(["openai/gpt-oss-120b", "openai/gpt-oss-20b (recommended)"]);
     for (const role of ["grader", "fallback", "conversation"] as const) expect(modelOptions(role).map((o) => o.value)).toEqual([...SUPPORTED_MODELS]);
   });
-  it("matches the CLI spelling to the same entry and returns null for any other name", () => {
+  it("matches the short spelling to the same entry and returns null for any other name", () => {
     const o = modelOptions("grader");
-    expect(selectedOption("gpt-oss:120b-cloud", o)).toBe("gpt-oss:120b");
-    expect(selectedOption("  GEMMA4:31B ", o)).toBe("gemma4:31b");
+    expect(selectedOption("gpt-oss-120b", o)).toBe("openai/gpt-oss-120b");
+    expect(selectedOption("  OPENAI/GPT-OSS-20B ", o)).toBe("openai/gpt-oss-20b");
     expect(selectedOption("kimi-k3", o)).toBeNull();
     expect(selectedOption("", o)).toBeNull();
   });
@@ -95,12 +101,12 @@ describe("model pickers", () => {
 });
 
 describe("price list lookups", () => {
-  const prices = { "gpt-oss:20b": P(0.07, 0.3), "gpt-oss:120b": P(0.15, 0.6) };
+  const prices = { "openai/gpt-oss-20b": P(0.075, 0.3), "openai/gpt-oss-120b": P(0.15, 0.6) };
   it("finds an exact entry (either spelling) and never guesses a family", () => {
-    expect(priceKey("gpt-oss:120b-cloud", prices)).toBe("gpt-oss:120b");
-    expect(priceFor("gpt-oss:20b", prices)?.input_per_m).toBe(0.07);
+    expect(priceKey("gpt-oss-120b", prices)).toBe("openai/gpt-oss-120b");
+    expect(priceFor("openai/gpt-oss-20b", prices)?.input_per_m).toBe(0.075);
     expect(priceFor("gpt-oss", prices)).toBeNull();
-    expect(priceFor("gemma4:31b", prices)).toBeNull();
+    expect(priceFor("llama-3.3-70b-versatile", prices)).toBeNull();
     expect(priceFor("", prices)).toBeNull();
   });
 });

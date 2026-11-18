@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from app.db import SCHEMA_V4 as SCHEMA, SCHEMA_VERSION, USAGE_SCHEMA, Database, _split_statements   # v4 = the schema before resumes
-from app.services.usage import UsageRecorder, from_ollama, loaded_models, usage_context
+from app.services.usage import UsageRecorder, from_groq, from_ollama, loaded_models, usage_context
 from conftest import act, add_questions, answer, start_interview, state
 
 MODEL = "qwen3.5:4b"
@@ -75,6 +75,16 @@ def test_recording_can_never_break_the_caller(container, monkeypatch):
         raise sqlite3.OperationalError("disk I/O error")
     monkeypatch.setattr(container.db, "tx", boom)
     container.usage.record({"model": MODEL, "purpose": "evaluation"})                      # must not raise
+
+
+def test_groq_usage_is_converted_from_seconds_to_milliseconds_and_marked_as_cloud():
+    u = from_groq({"queue_time": 0.05, "prompt_tokens": 21, "prompt_time": 0.2, "completion_tokens": 22, "completion_time": 1.5, "total_tokens": 43, "total_time": 1.75},
+                  "openai/gpt-oss-120b", "evaluation")
+    assert u == {"model": "openai/gpt-oss-120b", "purpose": "evaluation", "provider": "cloud", "prompt_tokens": 21, "output_tokens": 22,
+                 "load_ms": 0, "prompt_ms": 200, "output_ms": 1500, "total_ms": 1750}
+    assert from_groq({"prompt_time": 0.2, "completion_time": 1.5, "queue_time": 0.1}, "m", "x")["total_ms"] == 1800     # no total_time: the parts are summed
+    empty = from_groq({}, "m", "x")                                                        # a reply without usage: unknown, not zero tokens
+    assert empty["prompt_tokens"] is None and empty["output_tokens"] is None and empty["total_ms"] == 0
 
 
 def test_loaded_models_describes_ollama_ps():

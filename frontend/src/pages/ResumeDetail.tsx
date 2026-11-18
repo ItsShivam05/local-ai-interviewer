@@ -161,7 +161,7 @@ export default function ResumeDetail({ id }: { id: number }) {
           <button className="btn" onClick={() => void run(() => resumesApi.cancel(r.id), "Stopped")}>Stop</button></div>
       )}
       {awaitingConsent(r) && (
-        <div className="notice info rz-banner" role="status"><Icon name="cloud" /> <span><b>Cloud mode is on.</b> The text was read on this computer; organising it sends the text to Ollama’s servers.</span>
+        <div className="notice info rz-banner" role="status"><Icon name="cloud" /> <span><b>Cloud mode is on.</b> The text was read on this computer; organising it sends the text to Groq’s servers.</span>
           <button className="btn primary" onClick={() => setConsent(true)}>Review and allow</button></div>
       )}
 

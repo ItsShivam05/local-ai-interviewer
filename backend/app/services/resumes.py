@@ -375,7 +375,9 @@ class ResumeService:
             except LLMError as e:
                 errors.append(e.message)
                 log.warning("resume %s: part %d/%d failed (%s)", rid, i, len(chunks), e.code)
-                if e.code in {"budget_reached", "auth_failed", "auth_missing", "no_credits", "ollama_unavailable", "model_missing"}:
+                # A rate limit reaches here only when it could not be waited out inside the request (e.g. the daily allowance):
+                # asking for the remaining parts would fail at once and use up requests for nothing.
+                if e.code in {"budget_reached", "auth_failed", "auth_missing", "rate_limited", "ollama_unavailable", "model_missing"}:
                     break                                           # every other part would fail the same way
         if not self._current(rid, job_id):
             return
@@ -420,7 +422,7 @@ class ResumeService:
             if waiting:
                 with self.db.tx() as c:
                     c.execute("""UPDATE resumes SET status='failed', stage_detail=NULL, error_code='cloud_declined', job_id=job_id+1, updated_at=?,
-                                 error_message='You chose not to send this resume to Ollama cloud. Switch to the local model in Settings → AI models and press Try again, or fill it in yourself.'
+                                 error_message='You chose not to send this resume to Groq. Switch to the local model in Settings → AI models and press Try again, or fill it in yourself.'
                                  WHERE id=?""", (utcnow(), rid))
             return self.get(rid)
         if waiting:
@@ -515,7 +517,7 @@ class ResumeService:
         missing = [(rid, name) for rid, name, _, consent in profiles if consent != 1]
         if missing:
             raise conflict("cloud_consent_required", "Cloud mode is on: allow sending " + ", ".join(f"“{n}”" for _, n in missing) +
-                           " to Ollama cloud first.", resume_ids=[rid for rid, _ in missing])
+                           " to Groq first.", resume_ids=[rid for rid, _ in missing])
 
     def _writer(self, style: str, difficulty: str, job: Optional[dict[str, Any]] = None) -> QuestionWriter:
         def call(messages: list[dict[str, str]]) -> DraftBatch:

@@ -5,13 +5,17 @@ import pytest
 
 from conftest import act, add_questions, answer, enable_cloud, good_eval, start_interview, state
 
-GRADER, FALLBACK, CONVO = "gpt-oss:120b", "deepseek-v4.1-flash", "gemma4:31b"
+from fakecloud import RateLimited
+
+# By default the fallback and the conversation role use the same model (openai/gpt-oss-20b). These tests give the conversation role
+# its own (custom) model id, so they can still prove WHICH role made each call.
+GRADER, FALLBACK, CONVO = "openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"
 
 
 def setup(client, n=1, **cfg):
     sid = client.get("/api/sets").json()[0]["id"]
     add_questions(client, sid, n)
-    enable_cloud(client, **cfg)
+    enable_cloud(client, **{"conversation_model": CONVO, **cfg})
     return sid
 
 
@@ -134,7 +138,7 @@ def test_a_follow_up_that_repeats_the_question_is_not_used(cloud_client, cloud_f
     assert state(cloud_client, st["id"])["current"]["pending_followup"]["question"] == draft
 
 
-# ---------------------------------------------------------------- fallback rules: help when a different model could help, never waste credits
+# ---------------------------------------------------------------- fallback rules: help when a different model could help, never waste calls
 def test_the_fallback_model_takes_over_when_the_grader_is_down(cloud_client, cloud_fake):
     sid = setup(cloud_client)
     st = start_interview(cloud_client, sid, max_followups=0)
@@ -153,24 +157,24 @@ def test_an_unknown_grader_model_falls_back_to_the_other_one(cloud_client, cloud
     assert cloud_fake.models_used() == ["not-a-real-model:1b", FALLBACK]
 
 
-@pytest.mark.parametrize("status, code", [(401, "auth_failed"), (402, "no_credits"), (429, "rate_limited")])
+@pytest.mark.parametrize("status, code", [(401, "auth_failed"), (413, "too_long"), (RateLimited(retry_after=3600), "rate_limited")])
 def test_account_level_problems_are_not_retried_on_another_model(cloud_client, cloud_fake, status, code):
-    """A different cloud model would hit the same wall, so a second paid attempt would only waste credits."""
+    """A bad key, a text that is too long and a used-up allowance are reported as they are, never papered over by a second model."""
     sid = setup(cloud_client)
     st = start_interview(cloud_client, sid, max_followups=0)
     cloud_fake.replies = [status]
     st = state(cloud_client, answer(cloud_client, st).json()["id"])
     assert cloud_fake.models_used() == [GRADER]
     assert st["phase"] == "evaluation_failed" and st["error"]
-    assert "Retry" in st["error"] or "Settings" in st["error"] or "credits" in st["error"] or "key" in st["error"]
+    assert "Retry" in st["error"] or "Settings" in st["error"] or "too long" in st["error"] or "key" in st["error"]
 
 
 def test_retry_after_fixing_the_problem_works_and_costs_one_call(cloud_client, cloud_fake):
     sid = setup(cloud_client)
     st = start_interview(cloud_client, sid, max_followups=0)
-    cloud_fake.replies = [429]
+    cloud_fake.replies = [RateLimited(retry_after=3600)]                                  # the daily allowance: too long to wait for
     st = state(cloud_client, answer(cloud_client, st).json()["id"])
-    assert st["phase"] == "evaluation_failed" and st["answer_saved"] if "answer_saved" in st else True
+    assert st["phase"] == "evaluation_failed" and "about 60 minutes" in st["error"]
     r = cloud_client.post(f"/api/interviews/{st['id']}/retry", json={"turn_id": st["current_turn_id"]})
     assert r.status_code == 200 and state(cloud_client, st["id"])["phase"] == "feedback"
     assert cloud_fake.models_used() == [GRADER, GRADER]
@@ -190,7 +194,7 @@ def test_both_cloud_models_failing_ends_in_a_clear_error_with_the_answer_kept(cl
     cloud_fake.replies = [503, 503]
     st = state(cloud_client, answer(cloud_client, st, "my precious answer").json()["id"])
     assert cloud_fake.models_used() == [GRADER, FALLBACK] and st["phase"] == "evaluation_failed"
-    assert "Ollama cloud" in st["error"]
+    assert "Groq" in st["error"] and "Ollama" not in st["error"]
     assert "my precious answer" in json.dumps(st["current"]["thread"])
 
 
@@ -201,7 +205,7 @@ def test_the_local_model_helps_only_if_the_user_allowed_it(cloud_client, cloud_f
     st = answer(cloud_client, st).json()
     assert cloud_fake.models_used() == [GRADER, FALLBACK] and len(fake.chat_calls) == 1
     g = evaluation(cloud_client, st["id"])["graded_by"]
-    assert g["provider"] == "local" and g["model"] == "qwen3.5:4b" and g["fell_back_from"] == GRADER and "Ollama cloud" in g["reason"]
+    assert g["provider"] == "local" and g["model"] == "qwen3.5:4b" and g["fell_back_from"] == GRADER and "Groq" in g["reason"]
 
 
 def test_without_that_permission_a_cloud_failure_stays_a_failure(cloud_client, cloud_fake, fake):
@@ -346,7 +350,7 @@ def test_a_failing_voice_cleanup_uses_the_raw_transcript_and_does_not_try_anothe
     st = start_interview(cloud_client, sid, max_followups=0)
     cloud_fake.replies = [503]                                                            # the conversation model is down for the cleanup call
     st = answer(cloud_client, st, "My SQL is relational", source="voice").json()
-    assert cloud_fake.models_used() == [CONVO, GRADER]                                    # no deepseek attempt for the cleanup
+    assert cloud_fake.models_used() == [CONVO, GRADER]                                    # no fallback-model attempt for the cleanup
     assert state(cloud_client, st["id"])["phase"] == "feedback"
     assert "My SQL is relational" in cloud_fake.chats[1]["json"]["messages"][1]["content"]   # the raw words were graded
 
@@ -365,3 +369,13 @@ def test_the_fallback_model_is_only_for_essential_work(cloud_client, cloud_fake)
     cloud_fake.replies = [good_eval(correctness=4, followup="Which merge key would you choose?", missing=["Merge keys"]), 503]
     answer(cloud_client, st, "partial")
     assert FALLBACK not in cloud_fake.models_used()
+
+
+def test_a_short_rate_limit_is_waited_out_and_the_interview_simply_continues(cloud_client, cloud_fake):
+    """Groq's free plan allows only a few thousand tokens a minute: a brief 429 must not fail the answer."""
+    sid = setup(cloud_client)
+    st = start_interview(cloud_client, sid, max_followups=0)
+    cloud_fake.replies = [RateLimited(retry_after=20)]
+    st = answer(cloud_client, st).json()
+    assert state(cloud_client, st["id"])["phase"] == "feedback" and cloud_fake.models_used() == [GRADER, GRADER]
+    assert cloud_client.app.state.c.cloud.slept and 20 <= cloud_client.app.state.c.cloud.slept[0] <= 21

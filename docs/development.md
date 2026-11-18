@@ -88,7 +88,7 @@ backend/.venv/bin/python -m pytest backend -q --cov=backend/app --cov-report=ter
 backend/.venv/bin/ruff check .                                               # lint (rules in ruff.toml)
 ```
 
-Total line coverage was **94 %** on 2026-11-15 on this branch. Tests mock Ollama with `httpx.MockTransport` and a fake cloud server
+Total line coverage was **94 %** on 2026-11-15 on this branch. Tests mock Ollama with `httpx.MockTransport` and a fake Groq API server
 (`backend/tests/fakecloud.py`), so no model is downloaded and nothing needs a GPU. Tests that need the real models are marked
 `integration` (see `backend/pytest.ini`), live in `backend/tests/integration/` and are described below.
 
@@ -133,7 +133,7 @@ cd frontend
 node e2e/basics.mjs        # smoke test, no model needed
 node e2e/ui-audit.mjs      # every page in light and dark: screenshots, text contrast, overflow
 node e2e/resumes.mjs       # resumes with a fake local model
-node e2e/cloud.mjs         # cloud mode against a fake cloud server (no network, no credits)
+node e2e/cloud.mjs         # Groq cloud mode against a fake Groq server (no network, no account)
 node e2e/full-flow.mjs     # a full interview with the REAL local models
 ```
 

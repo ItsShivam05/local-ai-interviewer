@@ -103,7 +103,7 @@ def build_setup_report(settings: Settings, health: dict[str, Any], *, cloud_key_
                           "help": {"summary": "This is the AI that listens to your answers and grades them, on your own computer.",
                                    "steps": [{"title": ("Press the download button above, or run this in a terminal" if ollama_ok else "Once Ollama is running you can download it here with one click, or run this in a terminal"), "command": setup_cmd()}]}})
     else:
-        items.append({"id": "cloud", "label": "Ollama cloud", "required": True, "status": "ok" if cloud_key_ready else "missing",
+        items.append({"id": "cloud", "label": "Groq cloud", "required": True, "status": "ok" if cloud_key_ready else "missing",
                       "detail": "API key saved and consent given" if cloud_key_ready else "add your API key in Settings → AI models", "action": None if cloud_key_ready else "open_ai_settings"})
 
     tts = health["tts"]
