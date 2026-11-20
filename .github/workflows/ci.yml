@@ -185,3 +185,19 @@ jobs:
           ping -n 3 127.0.0.1 > NUL
           curl -s -m 3 -o NUL http://127.0.0.1:3000/api/health && (echo ::error::still running after stop & exit /b 1)
           exit /b 0
+      # Only when the step above failed on Windows: show why (the launcher's log can be empty if the process dies very early).
+      - name: Diagnose a failed start on Windows (backend log, import check, foreground start)
+        if: failure() && runner.os == 'Windows'
+        shell: pwsh
+        working-directory: backend
+        run: |
+          Write-Host "--- logs/backend.log"; Get-Content ../logs/backend.log -ErrorAction SilentlyContinue
+          Write-Host "--- import check"; .venv\Scripts\python -c "import app.main; print('import ok')"
+          Write-Host "--- foreground start for 30 s"
+          $p = Start-Process -FilePath .venv\Scripts\python.exe -ArgumentList '-m','uvicorn','app.main:app_factory','--factory','--port','3099' `
+               -RedirectStandardOutput ../fg-out.txt -RedirectStandardError ../fg-err.txt -PassThru -NoNewWindow
+          Start-Sleep 30
+          try { (Invoke-WebRequest http://127.0.0.1:3099/api/health -UseBasicParsing).Content } catch { Write-Host "health: $_" }
+          Write-Host "--- stderr"; Get-Content ../fg-err.txt
+          Write-Host "--- stdout"; Get-Content ../fg-out.txt
+          Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue

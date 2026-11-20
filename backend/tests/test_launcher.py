@@ -76,7 +76,7 @@ def test_logs_are_readable_by_the_owner_only(m):
     with m.open_log("backend.log", "ab") as f:
         f.write(b"x")
     (m.LOG_DIR / "old.log").write_bytes(b"old")
-    os.chmod(m.LOG_DIR / "old.log", 0o644)
+    os.chmod(m.LOG_DIR / "old.log", 0o640)            # a looser mode left by an older version (group-readable) must be tightened
     with m.open_log("old.log", "ab") as f:
         f.write(b"y")
     assert (m.LOG_DIR.stat().st_mode & 0o777) == 0o700
@@ -286,3 +286,31 @@ def test_a_lock_file_is_installed_with_hash_checking_and_a_plain_file_without(m,
     m.pip_install(m.BACKEND / "requirements-stt.txt")
     assert "--require-hashes" in ran[0] and ran[0][-1].endswith("requirements.lock")
     assert "--require-hashes" not in ran[1]
+
+
+def test_waiting_for_the_backend_reports_an_early_exit_with_its_code(m, tmp_path, monkeypatch):
+    """CI on Windows (2026-11-20): "Backend failed to start" with an empty log and no reason. Now the exit code is reported."""
+    monkeypatch.setattr(m, "api_health", lambda port: False)
+    pid = m.spawn([sys.executable, "-c", "import sys; sys.exit(3)"], "early.log", tmp_path)
+    t0 = time.monotonic()
+    assert m.wait_for_backend(pid, 1, timeout_s=10, poll_s=0.05) == (False, 3)
+    assert time.monotonic() - t0 < 5                                          # returned at the exit, not at the timeout
+
+
+def test_waiting_keeps_going_while_the_backend_is_alive_and_returns_once_it_answers(m, tmp_path, monkeypatch):
+    answers = iter([False, False, False, True])
+    monkeypatch.setattr(m, "api_health", lambda port: next(answers))
+    pid = m.spawn([sys.executable, "-c", "import time; time.sleep(30)"], "slow.log", tmp_path)
+    try:
+        assert m.wait_for_backend(pid, 1, timeout_s=10, poll_s=0.01) == (True, None)
+    finally:
+        m.terminate(pid)
+
+
+def test_waiting_gives_up_at_the_timeout_while_the_process_still_runs(m, tmp_path, monkeypatch):
+    monkeypatch.setattr(m, "api_health", lambda port: False)
+    pid = m.spawn([sys.executable, "-c", "import time; time.sleep(30)"], "hung.log", tmp_path)
+    try:
+        assert m.wait_for_backend(pid, 1, timeout_s=0.3, poll_s=0.05) == (False, None)
+    finally:
+        m.terminate(pid)

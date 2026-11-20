@@ -375,6 +375,25 @@ def terminate(pid: int, grace: float = 3.0) -> None:
             return
 
 
+BACKEND_START_TIMEOUT_S = 90     # a first start on a fresh machine (no compiled bytecode yet, antivirus scanning every new file) can be slow
+
+
+def wait_for_backend(pid: int, port: int, timeout_s: float = BACKEND_START_TIMEOUT_S, poll_s: float = 0.5) -> tuple[bool, Optional[int]]:
+    """(healthy, exit code). Waits while the process is alive; returns early when it answers or exits. Exit code None: still running
+    or unknown (not a child of this run)."""
+    deadline = time.monotonic() + timeout_s
+    while True:
+        if api_health(port):
+            return True, None
+        proc = _CHILDREN.get(pid)
+        code = proc.poll() if proc is not None else None
+        if code is not None or not pid_alive(pid):
+            return api_health(port), code
+        if time.monotonic() >= deadline:
+            return False, None
+        time.sleep(poll_s)
+
+
 def api_health(port: int) -> bool:
     return http(f"http://127.0.0.1:{port}/api/health") is not None
 
@@ -548,17 +567,24 @@ def cmd_start(args: argparse.Namespace) -> int:
     pid = spawn([str(VENV_PY), "-m", "uvicorn", "app.main:app_factory", "--factory", "--host", "127.0.0.1", "--port", str(api_port),
                  "--log-level", "warning", "--no-server-header"], "backend.log", BACKEND, env)
     write_pid("backend", pid)
-    for _ in range(40):
-        if api_health(api_port) or not pid_alive(pid):
-            break
-        time.sleep(0.5)
-    if not api_health(api_port):
-        bad("Backend failed to start. Last log lines:")
+    healthy, exit_code = wait_for_backend(pid, api_port)
+    if not healthy:
+        if exit_code is None:
+            bad(f"Backend did not answer within {BACKEND_START_TIMEOUT_S} s (the process is still running). Last log lines:")
+            terminate(pid)
+        else:
+            bad(f"Backend exited with code {exit_code} before it was ready. Last log lines:")
+        lines: list[str] = []
         try:
-            for line in (LOG_DIR / "backend.log").read_text(errors="replace").splitlines()[-15:]:
-                info("  " + line)
+            lines = (LOG_DIR / "backend.log").read_text(errors="replace").splitlines()[-15:]
         except OSError:
             pass
+        for line in lines:
+            info("  " + line)
+        if not lines:
+            run = r".venv\Scripts\python" if WINDOWS else ".venv/bin/python"
+            info(f"  (the log is empty) To see the error, run the backend in the foreground:  cd backend && {run} "
+                 "-m uvicorn app.main:app_factory --factory --port 3000")
         drop_pid("backend")
         return 1
 

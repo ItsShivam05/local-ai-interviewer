@@ -88,6 +88,10 @@ Found by an audit of the whole project in November 2026.
 - With `GROQ_BASE_URL` set, the consent screen names the server that really receives the text instead of presenting it as Groq.
 
 ### Fixed
+- Launcher: it waited at most 20 s for the backend and then reported "Backend failed to start" with no reason (seen on the first CI
+  run on Windows, 2026-11-20, with an empty log). It now waits up to 90 s while the backend process is alive (a first start on a fresh
+  machine can be slow), reports the exit code if the process died, and prints the command to run the backend in the foreground when
+  the log is empty. CI prints a diagnosis when the Windows start fails. Tests: `test_launcher.py`.
 - `logs/backend.log` stayed empty during a normal interview (nothing was logged below warning level), although the docs send you
   there for troubleshooting. Saving an answer, each grading (with its time) and finishing are now logged with ids, sizes and
   timings only, never the answer text. Test: `test_interview_flow.py`.
