@@ -393,3 +393,16 @@ def test_deleting_the_active_interview_frees_the_slot(client, set_id):
     first = start_interview(client, set_id)
     assert client.delete(f"/api/interviews/{first['id']}").status_code == 200
     assert start_interview(client, set_id)["status"] == "in_progress"
+
+
+def test_an_interview_leaves_ids_and_timings_in_the_log_but_never_the_answer(client, set_id, fake, caplog):
+    """Review round 3: logs/backend.log stayed empty during a whole interview although the docs point to it for troubleshooting."""
+    import logging
+    caplog.set_level(logging.INFO, logger="interviewer")
+    add_questions(client, set_id, 1)
+    fake.chat_replies = [good_eval()]
+    st = start_interview(client, set_id, max_followups=0, feedback_mode="at_end")
+    answer(client, st, "SECRET-ANSWER-TEXT about joins")
+    text = "\n".join(r.getMessage() for r in caplog.records if r.name.startswith("interviewer"))
+    assert "answer to turn" in text and "graded in" in text and "completed" in text
+    assert "SECRET-ANSWER-TEXT" not in text

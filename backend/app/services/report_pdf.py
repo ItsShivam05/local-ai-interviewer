@@ -12,6 +12,9 @@ from datetime import datetime
 from typing import Any, Iterable, Optional
 from xml.sax.saxutils import escape
 
+from .eval_profiles import DIMENSION_SHORT_LABELS
+from .reports import suggested_answer_label
+
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_LEFT
 from reportlab.lib.pagesizes import A4
@@ -51,8 +54,7 @@ GOOD, MID, LOW = colors.HexColor("#0f7a54"), colors.HexColor("#8f5700"), colors.
 QUOTE_BG = colors.HexColor("#f6f7fb")
 
 TYPE_LABEL = {"technical": "Technical", "hr": "HR", "scenario": "Scenario-based", "mixed": "Mixed"}
-DIM_LABEL = {"correctness": "Correctness", "completeness": "Completeness", "depth": "Depth", "practical_application": "Practical use",
-             "clarity": "Clarity", "production_awareness": "Production"}
+DIM_LABEL = DIMENSION_SHORT_LABELS            # one list for every dimension, defined with the dimensions themselves
 
 _REPLACE = {"✓": "+", "✔": "+", "✗": "x", "✘": "x", "✕": "x", "→": "->", "←": "<-", " ": " ", " ": " ",
             " ": " ", "​": "", "‍": "", "﻿": "", "\t": "    ", "‑": "-", "−": "-", "×": "x"}
@@ -332,7 +334,7 @@ def render_pdf(r: dict[str, Any]) -> bytes:
             story.append(Paragraph(f"<font name='{FONT_B}' color='{hexc(score_color(t['score']))}'>{para_text(sc_txt)}</font>{para_text(note)}", ParagraphStyle("sc", parent=st["body"], spaceBefore=6)))
             dims = ev.get("dimension_scores") or {}
             if dims:
-                line = "   ".join(f"{DIM_LABEL.get(k, k)} {fmt_score(v)}" for k, v in dims.items() if v is not None and (k != "production_awareness" or ev.get("production_relevant")))
+                line = "   ".join(f"{DIM_LABEL.get(k) or k.replace('_', ' ').capitalize()} {fmt_score(v)}" for k, v in dims.items() if v is not None and (k != "production_awareness" or ev.get("production_relevant")))
                 story.append(Paragraph(para_text(line), st["small"]))
             for title, key, color in (("What you did well", "correct_points", GOOD), ("What was missing", "missing_concepts", MID),
                                       ("Misconceptions", "misconceptions", LOW), ("How to improve", "suggested_improvements", ACCENT)):
@@ -341,8 +343,12 @@ def render_pdf(r: dict[str, Any]) -> bytes:
                     story.append(Paragraph(title, st["label"]))
                     story.append(lst)
             if ev.get("ideal_answer"):
-                story.append(Paragraph("Reference answer", st["label"]))
+                # for a resume question the grader cannot know the facts of your project: it outlines a strong answer instead
+                story.append(Paragraph(safe(suggested_answer_label(q)), st["label"]))
                 story.append(Paragraph(para_text(ev["ideal_answer"]), st["body"]))
+                unverified = next((f.get("message") for f in ev.get("consistency_flags") or [] if f.get("code") == "reference_figures_unverified"), None)
+                if unverified:
+                    story.append(Paragraph(para_text(unverified), st["small"]))
             extras = []
             if ev.get("uncertainty_note"):
                 extras.append(f"Evaluation note ({ev.get('confidence', 'medium')} confidence): {ev['uncertainty_note']}")
@@ -368,6 +374,8 @@ def render_pdf(r: dict[str, Any]) -> bytes:
     buf = io.BytesIO()
     footer = f"AI Interviewer  |  {safe(iv['title'])[:60]}  |  {_date(iv.get('completed_at') or iv.get('created_at'))}"
     doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=18 * mm, rightMargin=18 * mm, topMargin=16 * mm, bottomMargin=20 * mm,
-                            title=f"Interview report: {safe(iv['title'])}", author="AI Interviewer", subject="Mock interview report")
+                            title="Interview report (share-safe copy)" if r.get("redacted") else f"Interview report: {safe(iv['title'])}",
+                            author="AI Interviewer", subject="Mock interview report",
+                            invariant=1 if r.get("redacted") else 0)      # a share-safe copy carries no creation time or time zone
     doc.build(story, canvasmaker=lambda *a, **k: _NumberedCanvas(*a, footer=footer, **k))
     return buf.getvalue()

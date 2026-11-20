@@ -69,3 +69,15 @@ def test_skipping_a_followup_in_after_followups_mode_shows_feedback(client, set_
     assert st["phase"] == "awaiting_answer" and st["current"]["turn"]["kind"] == "followup"
     st = act(client, st, "skip").json()
     assert st["phase"] == "feedback" and st["current"]["item"]["position"] == 0
+
+
+def test_an_app_error_during_grading_never_leaves_the_interview_stuck_evaluating(client, container, set_id, monkeypatch):
+    """Review round 1: the grading worker swallowed every AppError and returned, which would leave the interview in 'evaluating'
+    for good. Only "the interview was deleted meanwhile" may end quietly; anything else becomes 'evaluation failed', answer kept."""
+    from app.errors import conflict
+    add_questions(client, set_id, 1)
+    st = start_interview(client, set_id, max_followups=0)
+    monkeypatch.setattr(container.interviews.evaluator, "evaluate", lambda *a, **k: (_ for _ in ()).throw(conflict("busy", "Grader busy.")))
+    after = answer(client, st, "My answer").json()
+    assert after["phase"] == "evaluation_failed" and "Grader busy" in after["error"]
+    assert after["current"]["turn"]["answer_text"] == "My answer"

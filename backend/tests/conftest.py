@@ -125,6 +125,18 @@ class FakeOllama:
         return httpx.Response(404, json={"error": "unknown"})
 
 
+CLOUD_ENV = ("GROQ_API_KEY", "GROQ_BASE_URL", "CLOUD_REASONING_EFFORT", "CLOUD_TIMEOUT_S", "CLOUD_IDLE_TIMEOUT_S", "CLOUD_MAX_TOKENS")
+
+
+@pytest.fixture(autouse=True)
+def _no_real_cloud_settings(request, monkeypatch):
+    """Ordinary tests must not see the developer's own cloud settings: a real GROQ_API_KEY exported in the shell would otherwise be
+    picked up as "a key from the environment" and change what the app under test does. Integration tests keep the environment."""
+    if request.node.get_closest_marker("integration") is None:
+        for name in CLOUD_ENV:
+            monkeypatch.delenv(name, raising=False)
+
+
 @pytest.fixture
 def fake() -> FakeOllama:
     return FakeOllama()

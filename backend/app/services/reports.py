@@ -115,6 +115,8 @@ def build_report(c: sqlite3.Connection, iid: int) -> dict[str, Any]:
             "position": it["position"] + 1, "text": it["text"], "topic": it["topic"], "difficulty": it["difficulty"],
             "status": it["status"], "score": score, "verdict": verdict_for(score) if score is not None else None,
             "followups_asked": it["followup_count"], "turns": tviews, "source": it.get("source") or "bank",
+            # without an expected answer of yours, the suggested answer is the grading model's own and is checked by nothing
+            "has_rubric": bool((it.get("rubric") or "").strip()),
         }
         if q["source"] == "resume":
             q["resume_id"], q["resume_name"] = it.get("resume_id"), it.get("resume_name")
@@ -376,6 +378,27 @@ def rule_based_insights(questions: list[dict], topics: list[dict], summary: dict
             "repeated_misconceptions": repeated, "topics_to_revise": revise, "recommendations": recs}
 
 
+UNCHECKED_NOTE = "not checked: there is no expected answer for this question, and the model can be wrong"
+
+
+def suggested_answer_label(q: dict[str, Any]) -> str:
+    """The heading of the model-written answer. Review round 3: a false "Reference answer" read like an authority."""
+    if q.get("source") == "resume":
+        return "What a strong answer covers"
+    return "Suggested answer (written by the AI)" + ("" if q.get("has_rubric") else f", {UNCHECKED_NOTE}")
+
+
+def _clip_question(text: Optional[str], n: int = 240) -> str:
+    text = " ".join((text or "").split())
+    text = text if len(text) <= n else text[: n - 1] + "…"
+    return text.replace("<<<", "< < <").replace(">>>", "> > >")
+
+
+def narrative_resume_ids(data: dict[str, Any]) -> list[Optional[int]]:
+    """Resumes whose text the summary input carries (questions about a resume): the gateway needs their consent in cloud mode."""
+    return [q.get("resume_id") for q in data["questions"] if q.get("source") == "resume" and q["score"] is not None]
+
+
 def narrative_digest(data: dict[str, Any]) -> Optional[str]:
     lines = []
     for q in data["questions"]:
@@ -385,7 +408,10 @@ def narrative_digest(data: dict[str, Any]) -> Optional[str]:
         correct = [p for e in ev for p in e.get("correct_points", [])][:2]
         missing = [p for e in ev for p in e.get("missing_concepts", [])][:3]
         wrong = [p for e in ev for p in e.get("misconceptions", [])][:2]
-        lines.append(f"Q{q['position']} [{q['topic'] or UNCATEGORIZED}] score {q['score']}/10. "
+        # the question itself: without it the summary model guessed what was asked (review round 2: a LEFT JOIN question was
+        # summarised as "full outer join"). Untrusted text, so it cannot close or fake the data fence.
+        asked = _clip_question(q["text"])
+        lines.append(f"Q{q['position']} [{q['topic'] or UNCATEGORIZED}] <<<{asked}>>> score {q['score']}/10. "
                      f"Correct: {'; '.join(correct) or '-'}. Missing: {'; '.join(missing) or '-'}. "
                      f"Misconceptions: {'; '.join(wrong) or '-'}.")
     if not lines:
@@ -474,14 +500,15 @@ def redact(data: dict[str, Any]) -> dict[str, Any]:
     out: dict[str, Any] = {"redacted": True}
     iv = src.get("interview") or {}
     cfg = iv.get("config") or {}
-    out["interview"] = {k: iv.get(k) for k in ("id", "title", "type", "status", "created_at", "completed_at", "end_reason")}
+    out["interview"] = {k: iv.get(k) for k in ("id", "type", "status", "end_reason")}
+    out["interview"]["title"] = "Interview report"                    # a title is free text ("Acme final round"): not for sharing
+    for k in ("created_at", "completed_at"):                         # the day is enough; exact times say when and where you were
+        out["interview"][k] = (iv.get(k) or "")[:10] or None
     out["interview"]["config"] = {k: cfg.get(k) for k in ("interview_type", "mode", "strategy", "start_level", "strictness", "max_followups",
                                                            "time_limit_minutes", "max_questions") if k in cfg}
     out["summary"] = dict(src.get("summary") or {})
-    out["topics"] = [{k: t.get(k) for k in ("topic", "questions", "scored", "average_score", "question_numbers")} for t in src.get("topics") or []]
     out["skills"] = [dict(k) for k in src.get("skills") or []]
     out["scoring_rules"] = list(src.get("scoring_rules") or [])
-    out["progress"] = [dict(p) for p in src.get("progress") or []]
     questions = []
     for q in src.get("questions") or []:
         resume = q.get("source") == "resume"
@@ -500,13 +527,26 @@ def redact(data: dict[str, Any]) -> dict[str, Any]:
         nq["turns"] = turns
         questions.append(nq)
     out["questions"] = questions
+    # Topics are rebuilt from the redacted questions: a resume question's topic is often the name of a project or employer, so all
+    # of them are counted under "Resume". Progress keeps only topics that still exist by name (never a resume one).
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for nq in questions:
+        groups.setdefault(nq["topic"] or UNCATEGORIZED, []).append(nq)
+    out["topics"] = []
+    for name, qs in groups.items():
+        sc = [x["score"] for x in qs if x["score"] is not None]
+        out["topics"].append({"topic": name, "questions": len(qs), "scored": len(sc), "average_score": round(sum(sc) / len(sc), 1) if sc else None,
+                              "question_numbers": [x["position"] for x in qs]})
+    out["topics"].sort(key=lambda t: (t["average_score"] is None, t["average_score"] if t["average_score"] is not None else 0))
+    bank_topics = {nq["topic"] or UNCATEGORIZED for nq in questions if nq["source"] != "resume"}
+    out["progress"] = [dict(p) for p in src.get("progress") or [] if p.get("topic") in bank_topics]
     # rule-based numbers and topic names only; no model prose (it paraphrases answers)
     scored = (out["summary"] or {}).get("average_score")
     out["insights"] = {"overall_summary": (f"Average {scored}/10 across {out['summary'].get('scored')} scored question(s)." if scored is not None
                                            else "No answers were scored in this session."),
                        "strengths": [], "knowledge_gaps": [], "repeated_misconceptions": [],
                        "topics_to_revise": [t for t in ((src.get("aggregated") or {}).get("topics_to_revise") or [])
-                                            if t in {x["topic"] for x in out["topics"]}], "recommendations": []}
+                                            if t in bank_topics], "recommendations": []}
     out["insights_source"] = "rules"
     out["narrative"] = None
     out["aggregated"] = out["insights"]
@@ -561,11 +601,28 @@ def claim_title(c: dict[str, Any], with_section: bool = True) -> str:
     return " › ".join(p for p in parts if p)
 
 
+def _md_safe(value: Any) -> Any:
+    """Every piece of text in a report, made inert for a Markdown viewer.
+
+    Answers, question text and the model's feedback are free text. Left as they are, an answer (or a model reply steered by a resume)
+    containing a Markdown image with a web address, or an HTML tag, would make the viewer that opens the exported file fetch that address or run that markup.
+    A backslash keeps the characters visible and readable, and stops them being read as markup."""
+    if isinstance(value, str):
+        return value.replace("<", "\\<").replace("](", "]\\(").replace("]:", "]\\:")
+    if isinstance(value, list):
+        return [_md_safe(v) for v in value]
+    if isinstance(value, dict):
+        return {k: _md_safe(v) for k, v in value.items()}
+    return value
+
+
 def render_markdown(r: dict[str, Any]) -> str:
+    r = _md_safe(r)
     s, iv = r["summary"], r["interview"]
     ins = r["insights"]
     avg = f"{s['average_score']}/10 ({s['verdict']})" if s["average_score"] is not None else "n/a (no scored answers)"
-    out = [f"# Interview report: {iv['title']}", "",
+    heading = "Interview report (share-safe copy)" if r.get("redacted") else f"Interview report: {iv['title']}"   # the title is withheld
+    out = [f"# {heading}", "",
            f"- Type: {iv['type']}  \n- Status: {iv['status']}  \n- Started: {iv['created_at']}  \n- Finished: {iv['completed_at'] or '-'}", "",
            "## Summary", "",
            f"| Total questions | Answered | Skipped | Not reached | Scored | Average score |\n|---|---|---|---|---|---|\n"
@@ -637,12 +694,15 @@ def render_markdown(r: dict[str, Any]) -> str:
                 out += [f"**Score:** {t['score']}/10", ""]
                 for title, key in (("Correct points", "correct_points"), ("Missing", "missing_concepts"),
                                    ("Misconceptions", "misconceptions"),
-                                   ("Possible errors (not found in the answer; not counted)", "unverified_misconceptions"),
+                                   ("Possible errors (not found in the answer; not counted as mistakes)", "unverified_misconceptions"),
                                    ("Suggested improvements", "suggested_improvements")):
                     if ev.get(key):
                         out += [f"**{title}:**", _bullets(ev[key]), ""]
                 if ev.get("ideal_answer"):
-                    out += [f"**Reference answer:** {ev['ideal_answer']}", ""]
+                    out += [f"**{suggested_answer_label(q)}:** {ev['ideal_answer']}", ""]
+                    for f in ev.get("consistency_flags") or []:
+                        if f.get("code") == "reference_figures_unverified":
+                            out += [f"_{f['message']}_", ""]
                 if ev.get("uncertainty_note"):
                     out += [f"_Evaluation note ({ev.get('confidence')} confidence): {ev['uncertainty_note']}_", ""]
             elif t["status"] == "submitted":

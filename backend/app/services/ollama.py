@@ -3,15 +3,23 @@ from __future__ import annotations
 
 import json
 import logging
+import queue
 import threading
 import time
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Iterator, Optional
 
 import httpx
 
 from ..config import Settings, is_loopback_url, setup_cmd
 
 log = logging.getLogger("interviewer.ollama")
+
+
+# Before the first word the model is still reading the prompt (and maybe loading): on an 8 GB computer that is swapping this alone
+# can take minutes, so it gets the whole LLM_TIMEOUT_S budget. Once words flow, a gap longer than LLM_IDLE_TIMEOUT_S means a stall.
+SLOW_START_MESSAGE = ("The local model did not start answering in time: it was still reading the question and your answer. This "
+                      "usually means the computer is short of memory. Your answer is saved; close other apps and press Retry.")
+IDLE_MESSAGE = "The local model stopped responding (idle timeout)."
 
 
 class LLMError(Exception):
@@ -146,8 +154,12 @@ class OllamaClient:
         deadline = time.monotonic() + self.settings.llm_timeout_s
         for attempt in range(2):
             payload = self._payload(messages, schema, model, max_tokens, temperature, think=False)
+            # The transport must not give up while the model is still reading the prompt: Ollama sends nothing, not even the
+            # response headers, until the first word, so the read timeout here is the time left of the overall budget.
+            # The idle limit between words is enforced by consume_chat_stream once words flow.
+            wait = max(1.0, deadline - time.monotonic())
             try:
-                with self.http.stream("POST", "/api/chat", json=payload) as r:
+                with self.http.stream("POST", "/api/chat", json=payload, timeout=httpx.Timeout(10.0, read=wait)) as r:
                     if r.status_code != 200:
                         body = r.read().decode("utf-8", "replace")
                         err = _error_text(body)
@@ -166,8 +178,8 @@ class OllamaClient:
                 raise
             except httpx.ConnectError as e:
                 raise LLMError("ollama_unavailable", _unavailable_msg(self.settings)) from e
-            except httpx.TimeoutException as e:
-                raise LLMError("timeout", "The local model stopped responding (idle timeout).") from e
+            except httpx.TimeoutException as e:      # only before the first word: later stalls are reported by the stream watchdog
+                raise LLMError("timeout", SLOW_START_MESSAGE) from e
             except httpx.HTTPError as e:
                 raise LLMError("failed", f"Connection to Ollama failed: {type(e).__name__}") from e
         raise LLMError("failed", "Ollama rejected the request.")
@@ -182,7 +194,7 @@ class OllamaClient:
                 log.debug("could not report model usage", exc_info=True)
 
     def _consume(self, response: httpx.Response, deadline: float) -> tuple[str, dict[str, Any]]:
-        return consume_chat_stream(response, deadline)
+        return consume_chat_stream(response, deadline, idle_s=self.settings.llm_idle_timeout_s)
 
     def unload(self, model: str) -> None:
         try:
@@ -221,12 +233,58 @@ class OllamaClient:
             self.llm_lock.release()
 
 
-def consume_chat_stream(response: httpx.Response, deadline: float) -> tuple[str, dict[str, Any]]:
+_END = object()
+
+
+def _watched_lines(response: httpx.Response, deadline: float, idle_s: float) -> Iterator[str]:
+    """The stream's lines, with two limits the transport cannot tell apart: until the first line arrives the whole remaining budget
+    (`deadline`) is allowed, because the model may still be reading a long prompt; after that, a gap longer than `idle_s` is a stall.
+    A helper thread does the blocking reads, so a limit can be enforced whatever the transport does (and tested with a fake one)."""
+    lines: queue.Queue[Any] = queue.Queue()
+
+    def pump() -> None:
+        try:
+            for line in response.iter_lines():
+                lines.put(line)
+        except BaseException as e:      # the watchdog closed the response, or the connection broke: hand it to the reader
+            lines.put(e)
+        else:
+            lines.put(_END)
+
+    threading.Thread(target=pump, name="ollama-stream", daemon=True).start()
+    started = False
+    while True:
+        remaining = deadline - time.monotonic()
+        wait = min(remaining, idle_s) if started else remaining
+        try:
+            item = lines.get(timeout=max(0.0, wait))
+        except queue.Empty:
+            try:
+                response.close()            # unblocks the helper thread
+            except Exception:
+                log.debug("closing a stalled stream failed", exc_info=True)
+            if not started:
+                raise LLMError("timeout", SLOW_START_MESSAGE) from None
+            if remaining <= idle_s:
+                raise LLMError("timeout", "The model took too long to answer.") from None
+            raise LLMError("timeout", IDLE_MESSAGE) from None
+        if item is _END:
+            return
+        if isinstance(item, BaseException):
+            if isinstance(item, httpx.TimeoutException):
+                raise LLMError("timeout", IDLE_MESSAGE if started else SLOW_START_MESSAGE) from item
+            raise item
+        started = True
+        yield item
+
+
+def consume_chat_stream(response: httpx.Response, deadline: float, idle_s: Optional[float] = None) -> tuple[str, dict[str, Any]]:
     """Read an Ollama /api/chat stream (local or cloud): the reply text, and the final chunk that carries the token counts and timings.
-    Any 'thinking' text a reasoning model streams is ignored: only the answer is returned (and only the answer must be valid JSON)."""
+    Any 'thinking' text a reasoning model streams is ignored: only the answer is returned (and only the answer must be valid JSON).
+    With `idle_s`, a stall after the first line is detected after that many seconds (see _watched_lines)."""
     parts: list[str] = []
     final: dict[str, Any] = {}
-    for line in response.iter_lines():
+    for line in (response.iter_lines() if idle_s is None else _watched_lines(response, deadline, idle_s)):
         if time.monotonic() > deadline:
             raise LLMError("timeout", "The model took too long to answer.")
         if not line:

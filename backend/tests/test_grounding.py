@@ -125,3 +125,67 @@ def test_voice_answer_quotes_match_the_raw_or_repaired_text():
 def test_garbage_evidence_from_the_model_is_tolerated():
     e = LLMEvaluation.model_validate(graded(7, extra={"evidence": ["not a dict", {"kind": "weird", "quote": 5}, None]}))
     assert len(e.evidence) == 1 and e.evidence[0].kind == "correct"
+
+
+@pytest.mark.parametrize("reference, sources, invented", [
+    ("Latency is ~200-600 ms on local hardware.", ["I built it solo; everything runs locally."], ["200", "600"]),
+    ("About 13 rules, 6 endpoints, for January 2025.", ["thirteen rules, six REST endpoints, 'January 2025' means the month"], []),
+    ("Cut runtime by 40% (from 1,200 s to 720.5 s).", ["cut runtime 40 percent, from 1200 seconds"], ["720.5"]),
+    ("Uses three layers and one SELECT; 3 checks.", [""], []),                                # single digits are not figures worth flagging
+    ("Handled 2M events and 99.9% uptime.", ["2M events/day"], ["99.9"]),
+    ("", ["anything"], []),
+])
+def test_figures_nobody_mentioned_are_detected(reference, sources, invented):
+    assert gr.unsupported_figures(reference, sources) == invented
+
+
+# ---------------------------------------------------------------- lists of terms with nothing explained (review round 1)
+TERM_LISTS = [
+    "Mutable, immutable, hashable, dictionary keys, memory, performance, sequence, indexing, slicing, append, CPython, garbage collection, iteration.",
+    "Mutual exclusion, hold and wait, circular wait, no preemption, lock ordering, timeouts, mutex, semaphore, threads, starvation, livelock.",
+    "- SYN\n- SYN-ACK\n- ACK\n- sequence numbers\n- reliability\n- ports\n- sockets",
+]
+NOT_LISTS = [
+    "Atomicity, consistency, isolation, durability.",                                   # four terms: too short to call a dump
+    "TCP is reliable and UDP is faster.",
+    "Idempotency means a rerun gives the same state: upserts, partition overwrite, watermarks, dedupe, batch ids, MERGE.",
+    "Use upserts, overwrite partitions, record watermarks, dedupe rows, track batch ids, retry safely.",   # every part says what to do
+]
+
+
+@pytest.mark.parametrize("text", TERM_LISTS)
+def test_a_dump_of_terms_is_recognised(text):
+    assert gr.is_term_list(text)
+
+
+@pytest.mark.parametrize("text", NOT_LISTS)
+def test_short_lists_and_explained_answers_are_not(text):
+    assert not gr.is_term_list(text)
+
+
+def test_a_term_list_is_capped_at_3_with_a_plain_reason():
+    g = gr.ground(ev(8), answers=[TERM_LISTS[1]], non_attempt=False, question="What is a deadlock and how do you prevent it?")
+    assert max(v for v in g.dimension_scores.model_dump().values() if v is not None) <= 3
+    assert any("lists terms without explaining" in a for a in g.adjustments) and any(f["code"] == "term_list" for f in g.flags)
+
+
+def test_a_question_that_asks_for_a_list_is_never_capped():
+    g = gr.ground(ev(8), answers=["GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS"], non_attempt=False, question="Name the HTTP methods.")
+    assert g.dimension_scores.correctness == 8 and not any(f["code"] == "term_list" for f in g.flags)
+
+
+def test_no_later_rule_lifts_a_capped_term_list_again():
+    """Real-model check: "nothing wrong was said, so correctness goes up to 5" ran after the cap and gave a term list 3.5."""
+    low = ev(2, correct=["Named mutual exclusion", "Named lock ordering"])
+    g = gr.ground(low, answers=[TERM_LISTS[1]], non_attempt=False, question="What is a deadlock and how do you prevent it?")
+    assert max(v for v in g.dimension_scores.model_dump().values() if v is not None) <= 3
+
+
+@pytest.mark.parametrize("question,expected", [
+    ("Name the HTTP methods.", True), ("List the ACID properties.", True), ("What are the SOLID principles?", True),
+    ("Can you name three sorting algorithms?", True),
+    ("What is the difference between a list and a tuple in Python?", False),        # the word "list", not a request for one
+    ("How would you name your database tables?", False), ("Explain idempotency.", False),
+])
+def test_only_a_real_request_for_a_list_is_exempt(question, expected):
+    assert gr.asks_for_list(question) is expected

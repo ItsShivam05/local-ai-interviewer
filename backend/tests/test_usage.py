@@ -1,4 +1,5 @@
 """Model usage log: tokens and time per model call, numbers only (Settings -> Model usage)."""
+from contextlib import closing
 import sqlite3
 import time
 from datetime import datetime, timedelta, timezone
@@ -197,7 +198,8 @@ def test_an_existing_v1_database_is_upgraded_in_place_without_losing_anything(tm
     raw.execute("INSERT INTO question_sets(name, created_at, updated_at) VALUES ('My old set', '2026-01-01', '2026-01-01')")
     raw.execute("PRAGMA user_version=1")
     raw.commit(); raw.close()
-    assert "llm_usage" not in [r[0] for r in sqlite3.connect(path).execute("SELECT name FROM sqlite_master")]
+    with closing(sqlite3.connect(path)) as check:
+        assert "llm_usage" not in [r[0] for r in check.execute("SELECT name FROM sqlite_master")]
     db = Database(path)
     with db.read() as c:
         assert c.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
