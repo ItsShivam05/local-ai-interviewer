@@ -314,3 +314,28 @@ def test_waiting_gives_up_at_the_timeout_while_the_process_still_runs(m, tmp_pat
         assert m.wait_for_backend(pid, 1, timeout_s=0.3, poll_s=0.05) == (False, None)
     finally:
         m.terminate(pid)
+
+
+def test_a_slow_health_answer_still_counts_as_running(m):
+    """CI on Windows, 2026-11-20: /api/health took about 2 s there (Ollama absent; Windows needs ~2 s to refuse a loopback connection),
+    the launcher's probe gave up at 2 s, and a running backend was reported as "did not answer within 90 s"."""
+    import http.server
+    import threading
+
+    class Slow(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            time.sleep(2.5)
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b'{"app":"ok"}')
+
+        def log_message(self, *a):
+            pass
+
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Slow)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        assert m.api_health(srv.server_address[1]) is True
+    finally:
+        srv.shutdown()
+        srv.server_close()

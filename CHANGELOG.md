@@ -5,6 +5,12 @@ All notable changes to this project. Format: [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+### Fixed
+- Launcher on Windows: with Ollama not installed or not running, `start` could report "Backend did not answer within 90 s" although
+  the app was running. Its health probe gave up after 2 s, and on Windows `/api/health` takes about that long when Ollama is absent
+  (Windows needs ~2 s to refuse a connection to a closed local port). The probe now allows 10 s. Seen in CI on 2026-11-20 (passed 2
+  runs, failed 1); the CI diagnosis showed the backend answering normally when started by hand. Test: `test_launcher.py`.
+
 ## [2.0.0] - 2026-11-21
 
 Database schema v6; scores of categorised questions change, see *Changed*.

@@ -394,8 +394,12 @@ def wait_for_backend(pid: int, port: int, timeout_s: float = BACKEND_START_TIMEO
         time.sleep(poll_s)
 
 
-def api_health(port: int) -> bool:
-    return http(f"http://127.0.0.1:{port}/api/health") is not None
+HEALTH_TIMEOUT_S = 10.0   # /api/health asks Ollama too. With Ollama absent, Windows takes about 2 s to refuse a loopback connection,
+                          # so a 2 s limit made a running backend look dead (first seen in CI on Windows, 2026-11-20).
+
+
+def api_health(port: int, timeout: float = HEALTH_TIMEOUT_S) -> bool:
+    return http(f"http://127.0.0.1:{port}/api/health", timeout=timeout) is not None
 
 
 # ------------------------------------------------------------------ start
