@@ -1,13 +1,15 @@
 // Real-Chrome end-to-end harness (puppeteer-core drives the installed Google Chrome; no browser download).
-// It starts its OWN backend on port 3100 with a throw-away data dir, so your real interview data is never touched.
+// It starts its OWN backend on port 3100 (E2E_PORT to change it) with a throw-away data dir, so your real interview data is never
+// touched. If that port is already taken it stops instead of testing (and writing into) whatever is listening there.
 import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync, mkdirSync } from "node:fs";
+import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import puppeteer from "puppeteer-core";
 
 export const ROOT = resolve(import.meta.dirname, "../..");
-export const PORT = 3100;
+export const PORT = Number(process.env.E2E_PORT || 3100);
 export const BASE = `http://localhost:${PORT}`;
 export const OUT = process.env.E2E_OUT || join(tmpdir(), "lai-e2e");
 mkdirSync(OUT, { recursive: true });
@@ -29,7 +31,20 @@ function findChrome() {
 const CHROME = findChrome();
 export const VENV_PYTHON = join(ROOT, "backend", ".venv", ...(process.platform === "win32" ? ["Scripts", "python.exe"] : ["bin", "python"]));
 
+/** True when something already accepts connections on 127.0.0.1:port. */
+export function portInUse(port, host = "127.0.0.1") {
+  return new Promise((done) => {
+    const sock = connect({ port, host });
+    sock.once("connect", () => { sock.destroy(); done(true); });
+    sock.once("error", () => done(false));
+  });
+}
+
 export async function startBackend(extraEnv = {}) {
+  if (await portInUse(PORT)) {
+    // Never test someone else's server: its code and its data are not ours, and the tests would write into that data.
+    throw new Error(`port ${PORT} is already in use (another app or e2e run?). Stop it, or set E2E_PORT to a free port.`);
+  }
   const dataDir = mkdtempSync(join(tmpdir(), "lai-data-"));
   const proc = spawn(VENV_PYTHON,
     ["-m", "uvicorn", "app.main:app_factory", "--factory", "--host", "127.0.0.1", "--port", String(PORT), "--log-level", "warning"],
@@ -37,7 +52,9 @@ export async function startBackend(extraEnv = {}) {
   let log = "";
   proc.stdout.on("data", (d) => (log += d)); proc.stderr.on("data", (d) => (log += d));
   for (let i = 0; i < 60; i++) {
-    try { if ((await fetch(`http://127.0.0.1:${PORT}/api/health`)).ok) return { proc, dataDir, log: () => log }; } catch {}
+    // our process must still be alive when the port answers: if it died (e.g. it could not bind), the answer came from elsewhere
+    if (proc.exitCode !== null) throw new Error(`backend exited with code ${proc.exitCode}:\n` + log);
+    try { if ((await fetch(`http://127.0.0.1:${PORT}/api/health`)).ok && proc.exitCode === null) return { proc, dataDir, log: () => log }; } catch {}
     await sleep(500);
   }
   proc.kill(); throw new Error("backend did not start:\n" + log);
@@ -48,7 +65,9 @@ export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 export async function launch({ width = 1280, height = 900, args = [], gate = false } = {}) {
   const browser = await puppeteer.launch({
     executablePath: CHROME, headless: true,
-    args: ["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream", "--no-first-run", "--disable-search-engine-choice-screen", ...args],
+    // CI runners (GitHub's Ubuntu images) cannot give Chrome its user-namespace sandbox; locally the sandbox stays on.
+    args: ["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream", "--no-first-run", "--disable-search-engine-choice-screen",
+      ...(process.env.CI ? ["--no-sandbox"] : []), ...args],
     defaultViewport: { width, height },
   });
   const page = await browser.newPage();
