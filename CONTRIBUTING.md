@@ -24,7 +24,7 @@ Frontend: Node 22.12+ for development (the frontend tests need it; running the a
 ## Before you open a pull request
 
 Run what CI runs (details and Windows paths in [docs/development.md](docs/development.md#running-the-checks)). Install the dev tools
-once: `backend/.venv/bin/python -m pip install -r backend/requirements-dev.txt` (with `uv`: `uv pip install --python backend/.venv/bin/python -r backend/requirements-dev.txt`).
+once: `backend/.venv/bin/python -m pip install --require-hashes -r backend/requirements-dev.lock` (with `uv`: `uv pip install --require-hashes --python backend/.venv/bin/python -r backend/requirements-dev.lock`).
 
 ```bash
 backend/.venv/bin/ruff check .                      # Python lint (rules in ruff.toml)

@@ -7,7 +7,8 @@
 | [README](../README.md) | Install, run, using the app, models, cloud mode, microphone, troubleshooting, known limitations |
 | [SUPPORT](../SUPPORT.md) | Where to get help and what to include in a report |
 | [SECURITY](../SECURITY.md) | Reporting vulnerabilities, security model, dependency scanning |
-| [How answers are evaluated](evaluation.md) | Profiles, grounding, deterministic scoring, follow-up policy |
+| [How answers are evaluated](evaluation.md) | Profiles, grounding, deterministic scoring, follow-up policy, measured grading quality |
+| [Verification log](verification.md) | What was run on which machine, with the command and the result |
 | [Adaptive interviews](adaptive-interviews.md) | Fixed vs adaptive mode, strategies, levels, early end |
 | [Resume intelligence](resume-intelligence.md) | Candidate profile and offline resume questions |
 

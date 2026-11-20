@@ -53,8 +53,8 @@ Every pool question gets a fit score; ties go to the original order:
 In order: time limit reached → question limit reached → no unasked question left → **objectives satisfied** (after at least four
 questions, and only when at least two tagged topics were asked): every topic still in the pool, and every topic asked, has sufficient
 evidence — two reliable (not low-confidence) scores within 3 points of each other, or three scored answers (skips are not evidence).
-An untagged or single-topic pool always runs to its question limit. Deep-dive ends when the focus topic has ≥ 4 scored answers and no focus questions are
-left. The reason is stored (`end_reason`) and shown in the report.
+An untagged or single-topic pool always runs to its question limit. Deep-dive ends when at least four questions have been asked, the focus topic has ≥ 4 scored answers, at least two answers have been
+scored since the last level change, and no focus questions are left. The reason is stored (`end_reason`) and shown in the report.
 
 ## Follow-ups
 

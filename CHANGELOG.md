@@ -32,6 +32,31 @@ Planned as 2.0.0 (database schema v6; scores of categorised questions change, se
 - Candidate profile: skills grouped by confidence (high open, medium and listed-only folded).
 
 ### Project infrastructure
+- pytest 9.0.3+ (PYSEC-2026-1845, dev only); the security workflow now audits the development lock too.
+- Tests fail on a leaked database connection or an unreaped child process (`filterwarnings` in `backend/pytest.ini`); three tests
+  that left a connection open are fixed, and the launcher reaps a child it started when it stops it.
+- A real-concurrency test: eight simultaneous submits of one answer give one 200, seven 409s and one model call; pause, end and
+  delete during a running grade behave as documented (`backend/tests/test_concurrency.py`).
+- New CI step (not yet run in CI at the time of writing): start and stop the app with the launcher on Linux, macOS and Windows (`start.sh`/`stop.sh`, `scripts\run.bat start`/`stop.bat`)
+  and checks the health endpoint and the UI in between; until now only the read-only `check` ran there. A new Linux job runs the
+  real-Chrome `qa-sweep` and `ui-audit` suites (no model needed).
+- `scripts/offline_check.py` (macOS): a real interview with the backend in a sandbox that blocks every non-loopback connection.
+  2026-11-19: 7/7 checks, only `127.0.0.1` contacted. README §10 no longer states a Wi-Fi-off result that was never measured.
+- Grading benchmark with the real local model (`backend/benchmarks/grading/`): 10 questions x 5 labelled answer kinds plus 6
+  prompt-injection attempts, 3 repeats. 2026-11-19, qwen3.5:4b, eval-2.1: 70/70 pairs ranked as labelled, 55/56 answers inside the
+  band fixed before the run, one subtle wrong claim missed, median repeat spread 0.2 points. Method and limits: docs/evaluation.md §8.
+- Python dependencies are installed from hash-locked files (`backend/requirements.lock`, `requirements-dev.lock`, generated from
+  the `.txt` files with `uv pip compile --universal --generate-hashes`) with `--require-hashes`, by the launcher and by CI; pip-audit
+  checks the lock. Verified: full backend suite on Python 3.10, 3.11 and 3.13 from the lock; every Windows x64 and Linux x64/arm64
+  wheel for Python 3.12 matches its recorded hash (`pip download --require-hashes`).
+- Frontend line coverage is measured: `npm run coverage`; CI runs it in place of `npm test`. It was 23 % of lines; tests for the
+  Report and Interview pages, rendered from report and interview states the backend itself produces
+  (`backend/tests/test_report_fixture.py` keeps those fixtures in step with the API), raise it to 41 % (2026-11-19), with
+  tests for the Setup page (the settings a preset fills are the ones sent; no second interview while one runs). Page tests wait up
+  to 5 s for the page to settle and 15 s per test, because a busy machine or CI runner can need longer than the 1 s / 5 s defaults.
+- `typescript-eslint` 8.73 removes the dev-only `minimatch` advisory (`npm audit`: 0 vulnerabilities).
+- The real-model integration tests score answers through `Evaluator.finalize`, the path the app uses, instead of the v1
+  `compute_score`.
 - CI rebuilt: lint/docs job, backend tests on macOS/Windows/Linux (Python 3.12) plus Ubuntu on Python 3.10, frontend checks on all three
   systems, launcher smoke test; actions pinned to commit SHAs, least-privilege permissions, cancelled duplicate runs, dependency caching.
 - Security workflow: dependency review on pull requests, pip-audit, npm audit, CodeQL (`security-extended`); weekly schedule. Dependabot
@@ -42,7 +67,85 @@ Planned as 2.0.0 (database schema v6; scores of categorised questions change, se
 - Release workflow (tag-triggered, verifies the tag matches the app version and the CHANGELOG), label taxonomy and sync workflow,
   issue forms, pull request template, governance and developer documentation, real screenshots and a social preview image.
 
+### Security
+Found by an audit of the whole project in November 2026.
+- **Resume consent could be bypassed in cloud mode.** A resume's text or an excerpt of it could reach the cloud provider without that
+  resume's consent when the mode was switched to cloud while the resume was being read, when an interview containing resume questions
+  was started locally and continued in cloud mode, or when a request supplied resume questions directly. Consent is now checked at the
+  one place every cloud request passes through; starting such an interview in cloud mode is refused with a clear message, and the
+  resume page has an *Allow for cloud* button.
+- Requests from other programs on the same computer are refused: a state-changing request whose `Origin` is another `localhost` port
+  is rejected (previously any loopback port was accepted), and so is any `/api` request a browser marks as cross-site. Responses
+  carry headers that forbid framing by other sites and content-type sniffing.
+- A small PDF that expands to an enormous size when opened ("decompression bomb") is refused before the PDF library reads it.
+- Text in the Markdown report export is escaped, so an answer or model reply cannot place a live image, link target or HTML tag in
+  the exported file.
+- The share-safe export no longer includes the interview title, exact times or resume-derived topic names.
+- Text placed in a prompt can no longer close its own "untrusted data" fence (the `<<<` / `>>>` markers are neutralised).
+- Errors from the cloud provider that arrive inside a streamed reply are redacted like all others (the API key cannot appear).
+- The launcher creates `logs/` readable by the owner only, and refuses to start when another program already listens on the app's
+  port on the IPv6 loopback address.
+- With `GROQ_BASE_URL` set, the consent screen names the server that really receives the text instead of presenting it as Groq.
+
 ### Fixed
+- `logs/backend.log` stayed empty during a normal interview (nothing was logged below warning level), although the docs send you
+  there for troubleshooting. Saving an answer, each grading (with its time) and finishing are now logged with ids, sizes and
+  timings only, never the answer text. Test: `test_interview_flow.py`.
+- The model-written answer was headed "Reference answer", which read like an authority even when it was wrong (independent review,
+  round 3: a false statement about tuples). It is now "Suggested answer (written by the AI)" in the app, Markdown and PDF, and is
+  marked *not checked* when the question has no expected answer. Tests: `test_reports.py`, `feedback.test.tsx`.
+- Report summary: the model that writes it never saw the questions, only topics and grading notes, and could describe an answer
+  wrongly (independent review, round 2: a LEFT JOIN answer summarised as "full outer join"). Each question's text is now in its
+  input, fenced as data; questions about a resume make the summary call pass the per-resume cloud consent check. Tests: `test_reports.py`.
+- Pausing while the last answer was being graded: the interview completed with the pause still open, so the pause counted as
+  interview time. Finishing now closes the pause. Test: `test_concurrency.py`.
+- Wording: an error the grader claims but cannot quote is "not counted as mistakes" (it is left out of the mistakes list and the
+  verdict). It was described as "not counted", but the score still comes from the grader's ratings; README and docs now say so.
+- Grading: an answer that only lists terms, explaining nothing, scored up to 4.9 (independent review, round 1). Such lists are now
+  capped at 3 with the reason shown; questions that ask for a list are exempt. Real model, 8 lists: the 7 detected scored 1.2–2.9
+  (`backend/benchmarks/grading/term_lists.py`). Tests: `test_grounding.py`.
+- The share-safe export's heading read "Interview report: Interview report"; it is now "Interview report (share-safe copy)" in
+  Markdown and the PDF's title. `HEAD /` (uptime checks, `curl -I`) was answered 405; the UI routes now accept HEAD.
+- Grading worker: an application error other than "interview deleted" ended the worker silently and left the interview in
+  "evaluating" for good. It now becomes "evaluation failed" with the answer kept. Test: `test_state_machine_guards.py`.
+- Interview: answering in a tab that was out of date (the server replies 409) reloaded the page to the current question but wiped
+  the explanation at once, so the typed answer seemed to vanish for no reason. The message now stays. Test:
+  `frontend/src/__tests__/interviewPage.test.tsx`.
+- End-to-end tests: when port 3100 was already taken (the app, or a second e2e run), the harness tested and wrote into that server
+  and reported PASS. It now refuses a busy port, checks its own backend is the one answering, and takes `E2E_PORT`. Test:
+  `node frontend/e2e/harness-selftest.mjs`.
+- Local model: an answer could fail with "the local model stopped responding (idle timeout)" while the model was still reading the
+  question and answer. Ollama sends nothing until its first word, and on an 8 GB computer that is swapping, reading a 1,800-token
+  prompt alone can take over 90 s (seen in review round 0: 4 of 6 real-model tests). The wait for the first word may now use the whole
+  `LLM_TIMEOUT_S` (240 s); `LLM_IDLE_TIMEOUT_S` applies between words; the message says which happened. Tests:
+  `backend/tests/test_llm_timeouts.py`.
+- Cloud mode:
+  - a reply cut off at the output limit, or a stream that ended early, was treated as a complete reply; it is now an error you can
+    retry;
+  - waiting out a rate limit no longer blocks other cloud requests, and the connection test reports "busy" instead of hanging;
+  - the **total** spending limit was computed from the usage history, so *Clear usage* (or the 2,000-row history limit) reset it; it
+    now has its own running total;
+  - the plain test command (`pytest backend`) could call the real Groq API when `GROQ_API_KEY` was set in the shell; real-API tests
+    now need `-m integration`, and ordinary tests ignore cloud variables from the environment;
+  - `/api/health` reported `local_only: true` unconditionally; it now reflects the address the server is bound to.
+- Grading:
+  - answers longer than 6,000 characters were silently cut before grading although 20,000 are accepted; the whole answer is graded;
+  - an answer that began with "I don't know exactly, but…" and then explained the topic could be scored as a non-attempt; only an
+    answer that is nothing but a non-attempt is treated as one;
+  - with all six rubric weights at zero, profile questions were scored on the extra dimensions only; the score is now the plain
+    mean of the core dimensions;
+  - adaptive mode could treat two different questions as duplicates ("…in Python 2?" / "…in Python 3?") and skip one, and deep-dive
+    did not recognise its focus topic when the letter case differed.
+- A backup download deleted the temporary file of another backup still being downloaded.
+- Importing a deeply nested JSON file returned a server error instead of a message; very large imports and voice names are limited.
+- Grading (prompt `eval-2.1`, profiles v3), from a real Groq-graded report:
+  - a correct, complete answer to a basic question was held below 8 because problem-solving counted at full weight on a definition;
+    it now counts at 35 % like the other dimensions a definition does not ask for, and the grader no longer lists syntax or internals
+    as "missing" from a correct definition;
+  - on resume questions the reference answer could state facts the candidate never gave (an invented latency figure); the grader is
+    now told to outline a strong answer from what was actually said, the heading reads "What a strong answer covers", and figures
+    that nobody mentioned are flagged in the app, the Markdown and the PDF;
+  - the PDF report printed raw field names (`conceptual_understanding 8 problem_solving 7`); every dimension now has a proper label.
 - The sidebar's last links were hidden behind the Local services panel on shorter windows (e.g. 1280×820); the menu now scrolls on
   its own and the panel folds when space is short.
 - A running adaptive interview showed "Question 1 of 1" on the dashboard and the Active interview bar; it now shows the planned total.

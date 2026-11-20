@@ -2,6 +2,11 @@
 
 Your personal interviewer for practicing any kind of tech interview (software, data, cloud, security, ML, QA, DevOps and more). It runs **on your own computer** (Mac, Windows or Linux): it asks questions aloud, listens to (or reads) your answers, scores them, asks smart follow-ups and gives you a report. Once it's set up it needs no internet, accounts or API keys (an optional cloud mode for faster grading is described in section 4b).
 
+> **Which computers it has really been tested on.** It was built and tested on an Apple-Silicon Mac (M2, 8 GB). Windows and Linux
+> are supported by the same code and checked by automated tests, but nobody has yet run a full interview on a real Windows or Linux
+> machine, so you may be the first: if something goes wrong there, please report it (see `SUPPORT.md`). With 8 GB of memory, close
+> other big apps while practising; the AI model needs about 4 GB.
+
 ---
 
 ## 0. Get the app
@@ -137,14 +142,14 @@ After the last question you get **Interview complete** with your **final score**
 * total / answered / skipped / average score and **topic-wise performance** bars,
 * a **Skills** breakdown (correctness, completeness, depth, practical application, clarity, production awareness),
 * an overall written summary, strengths, knowledge gaps, topics to revise, recommendations,
-* **Detailed feedback**: open any question to see your answers, the strengths and gaps, a reference answer, and a 🔊 button to hear the question again,
+* **Detailed feedback**: open any question to see your answers, the strengths and gaps, a suggested answer written by the AI (marked *not checked* when the question has no expected answer of yours), and a 🔊 button to hear the question again,
 * **Export as PDF** — press it and a finished, clean PDF report is built and saved straight to your Downloads (no print window). The button shows *Preparing PDF…* while it works, and waits for the written summary if that is still being finished. The PDF has a summary, the scorecard, topics, skills, insights and the detailed feedback for every question — text and tables, no charts. You can also export **JSON** or **Markdown** (the scorecard is included in both).
 
 If you practiced with your resume, **Resume claims** lists each thing from your resume you were asked about, with a Solid / Shaky / Weak verdict and a tip, weakest first.
 
 Skipped and not-reached questions are **not** included in your average.
 
-### Step 8 · Come back later
+### Step 7 · Come back later
 * Closed the tab or the computer mid-interview? Open the site → sidebar → **Interview**: a wide bar at the top shows your **Active interview** with **Continue interview**. Your place, answers and follow-up count are all saved. (**Exit Interview** takes you to the same page.)
 * **One interview at a time.** You can start a new interview only after you finish the active one or press **End interview** on that bar (the report is built from the answers so far).
 * **History** lists every session (resume, open report, delete). **Clear history** asks before deleting.
@@ -164,7 +169,7 @@ If your laptop is slow or short on memory, you can let Groq's servers do the gra
 1. Make a free API key at **console.groq.com/keys**.
 2. In the app: **Settings → AI models**, paste the key, read the notice and tick the box that says you understand your answers will be sent to Groq, then switch to cloud models.
 3. Press **Test connection (free)**. It only checks the key and lists the models — it uses nothing.
-4. (Optional) Set a **daily limit** in dollars. On Groq's free plan you are not charged, so the dollar figures are only what the same use would cost on a paid plan; the limit still stops calls when reached.
+4. Check the **daily limit**. It starts at **$1 a day and is enforced**: once the estimated cost of the day reaches it, the app makes no more cloud calls until you raise it or the next day starts. On Groq's free plan you are not charged, so the dollar figures are only what the same use would cost on a paid plan. You can change the limit or switch it off.
 
 Good to know:
 * The free plan has **small limits** (a few answers per minute, several dozen a day). If you hit one, the app waits a little and continues; if the wait is long it tells you when you can retry. Your answer is always kept.
