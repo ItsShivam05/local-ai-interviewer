@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --max-warnings 0",
     "test": "vitest run",
+    "coverage": "vitest run --coverage",
     "e2e": "node e2e/basics.mjs",
     "e2e:full": "node e2e/full-flow.mjs",
     "e2e:mic": "node e2e/mic.mjs",
@@ -29,13 +30,14 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^6.1.0",
+    "@vitest/coverage-v8": "^5.0.5",
     "eslint": "^9.39.5",
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^16.5.0",
     "jsdom": "^27.0.0",
     "puppeteer-core": "^25.17.0",
     "typescript": "^5.9.0",
-    "typescript-eslint": "^8.72.2",
+    "typescript-eslint": "^8.73.0",
     "vite": "^8.0.0",
     "vitest": "^5.0.0"
   }

@@ -16,7 +16,7 @@ from typing import Optional
 
 from ..schemas import DimensionScores, RubricSettings
 
-PROFILES_VERSION = 2          # bump when any profile's weights, dimensions or descriptors change
+PROFILES_VERSION = 3          # bump when any profile's weights, dimensions or descriptors change (3: problem-solving counts less on basic questions)
 
 # ---------------------------------------------------------------- dimension catalogue
 # The five core dimensions are always scored (they are part of the validated contract since v1). Extra dimensions are requested
@@ -31,6 +31,12 @@ DIMENSION_LABELS = {
     "practical_application": "Practical application", "clarity": "Communication clarity", "production_awareness": "Production awareness",
     "conceptual_understanding": "Conceptual understanding", "problem_solving": "Problem-solving", "edge_cases": "Edge-case awareness",
     "tradeoffs": "Trade-off analysis",
+}
+# Compact labels for score lines (PDF report). Every dimension must have one: tests/test_report_pdf.py checks it.
+DIMENSION_SHORT_LABELS = {
+    "correctness": "Correctness", "completeness": "Completeness", "depth": "Depth", "practical_application": "Practical use",
+    "clarity": "Clarity", "production_awareness": "Production", "conceptual_understanding": "Concepts",
+    "problem_solving": "Problem-solving", "edge_cases": "Edge cases", "tradeoffs": "Trade-offs",
 }
 # What each dimension measures (shown to the model and printed in reports).
 DIMENSION_MEANING = {
@@ -68,7 +74,9 @@ class EvalProfile:
     label: str
     version: int
     weights: dict[str, float]                       # relative; re-normalised over the dimensions actually scored
-    basic_scaled: tuple[str, ...] = ("depth", "practical_application", "edge_cases", "tradeoffs")       # count less on basic questions (v1 rule)
+    # count less on basic questions (the v1 rule for depth and practical application, extended to the newer dimensions a definition
+    # or simple difference does not ask for)
+    basic_scaled: tuple[str, ...] = ("depth", "practical_application", "problem_solving", "edge_cases", "tradeoffs")
     advanced_scaled: tuple[str, ...] = ("depth", "edge_cases", "tradeoffs", "production_awareness")    # count more on advanced questions
     meaning: dict[str, str] = field(default_factory=dict)   # profile-specific meaning of a dimension (behavioural)
     guidance: str = ""                              # one line added to the grading prompt
@@ -202,6 +210,11 @@ class ScoreResult:
 
 
 def score_answer(dims: DimensionScores, profile: EvalProfile, rubric: RubricSettings, level: str, production_relevant: bool) -> ScoreResult:
+    if not any(getattr(rubric, d) for d in LEGACY_DIMENSIONS):
+        # The user set every rubric weight to zero. As in v1 that means "no preference": a plain mean of the core dimensions.
+        # (Without this, a category profile would score only its extra dimensions, which the rubric editor cannot even see.)
+        vals = [getattr(dims, d) for d in CORE_DIMENSIONS]
+        return ScoreResult(round(sum(vals) / len(vals), 1), {d: round(1 / len(vals), 3) for d in CORE_DIMENSIONS}, [])
     weights = effective_weights(profile, rubric, level, production_relevant)
     used: dict[str, float] = {}
     missing: list[str] = []
@@ -235,7 +248,9 @@ def profile_prompt_block(profile: EvalProfile) -> str:
         lines.append(f"- In this profile {dim} means: {meaning}.")
     extra = profile.extra_dimensions
     if extra:
-        lines.append("Also score these dimensions (0-10 integers) in dimension_scores:")
+        lines.append("Also score these dimensions (0-10 integers) in dimension_scores. Judge each relative to what THIS question invites: "
+                     "when the question does not call for one (for example edge cases in a plain definition), do not mark it down - "
+                     "give it the score the answer earns on what was asked (the app already counts these less on basic questions):")
         for d in extra:
             lines.append(f"- {d}: {DIMENSION_MEANING[d]}. {EXTRA_ANCHORS[d]}")
     return "\n".join(lines)

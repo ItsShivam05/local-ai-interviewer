@@ -7,12 +7,13 @@ from __future__ import annotations
 
 import difflib
 import time
-from typing import Any
+from typing import Any, Optional
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
-from ..config import CLOUD_DATA_URL, CLOUD_KEYS_URL
+from ..config import CLOUD_API_URL, CLOUD_DATA_URL, CLOUD_KEYS_URL
 from ..db import utcnow
 from ..errors import AppError
 from ..services.ai_config import AIConfigUpdate
@@ -28,7 +29,7 @@ class KeyIn(BaseModel):
 
 
 class TestIn(BaseModel):
-    send_message: bool = False          # also send one tiny real request (about 30 tokens) to the grader model
+    send_message: bool = False          # also send one tiny real request (a few dozen tokens, capped at cloud.TINY_OUTPUT_TOKENS of output) to the grader model
 
 
 def public(c) -> dict[str, Any]:
@@ -45,12 +46,19 @@ def public(c) -> dict[str, Any]:
         "local_model": c.settings.llm_model,
         "roles": {"grader": "Grades answers, writes the feedback and the report summary.", "fallback": "Takes over automatically if the grader fails.",
                   "conversation": "Writes follow-up questions and cleans up voice transcripts."},
-        "provider": {"name": "Groq", "keys_url": CLOUD_KEYS_URL, "data_url": CLOUD_DATA_URL,
+        # custom_host is set when GROQ_BASE_URL points somewhere other than Groq: the screen then says where the text really goes
+        "provider": {"name": "Groq", "keys_url": CLOUD_KEYS_URL, "data_url": CLOUD_DATA_URL, "custom_host": _custom_host(c.settings.cloud_url),
                      "retention": "Groq says it does not keep your text by default, but may log requests for up to 30 days to fix reliability "
                                   "problems or investigate abuse. Its servers are in the United States."},
         "sent_to_cloud": ["Your interview questions", "Your answers (typed, or the text of what you said)", "Your expected answers / rubrics"],
         "stays_local": ["Your voice recordings and the speech-to-text", "The spoken questions (voice)", "Your database, reports and settings"],
     }
+
+
+def _custom_host(cloud_url: str) -> Optional[str]:
+    if cloud_url.rstrip("/") == CLOUD_API_URL:
+        return None
+    return urlsplit(cloud_url).netloc or cloud_url
 
 
 @router.get("")

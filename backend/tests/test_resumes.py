@@ -81,6 +81,37 @@ def test_encrypted_pdf_is_rejected_with_a_plain_message(client, fake):
     assert fake.chat_calls == []
 
 
+def _bomb_pdf(inflated: int) -> bytes:
+    """A tiny PDF whose single stream inflates to `inflated` zero bytes."""
+    import zlib
+    c = zlib.compressobj(9)
+    body = b"".join(c.compress(b"\0" * (1 << 20)) for _ in range(inflated >> 20)) + c.flush()
+    return b"%PDF-1.4\n1 0 obj\n<< /Length " + str(len(body)).encode() + b" /Filter /FlateDecode >>\nstream\n" + body + b"\nendstream\nendobj\n%%EOF\n"
+
+
+def test_a_pdf_that_expands_enormously_is_refused_before_the_pdf_library_opens_it(client, fake, monkeypatch):
+    """Security audit, Nov 2026: a file under the upload limit could inflate to gigabytes inside the PDF library."""
+    monkeypatch.setattr(rx, "MAX_STREAM_INFLATED", 4 << 20)
+    bomb = _bomb_pdf(8 << 20)
+    assert len(bomb) < 64 * 1024                                   # tiny on disk
+    monkeypatch.setattr(rx, "count_pages", lambda data: pytest.fail("the PDF library must not see this file"))
+    r = upload(client, bomb)
+    assert r.status_code == 422 and r.json()["error"]["code"] == "pdf_expands_too_much"
+    assert client.get("/api/resumes").json() == [] or not client.get("/api/resumes").json()
+
+
+def test_the_expansion_check_counts_the_whole_file_and_lets_normal_resumes_through(monkeypatch):
+    for make in (text_pdf, two_column_pdf, scanned_pdf, mixed_pdf):
+        rx.check_inflation(make())                                 # no error
+    monkeypatch.setattr(rx, "MAX_STREAM_INFLATED", 4 << 20)
+    monkeypatch.setattr(rx, "MAX_TOTAL_INFLATED", 5 << 20)
+    rx.check_inflation(_bomb_pdf(3 << 20))                         # one stream under both limits
+    with pytest.raises(rx.PdfError) as e:
+        rx.check_inflation(_bomb_pdf(3 << 20) + _bomb_pdf(3 << 20))   # each under the per-stream limit, together over the total
+    assert e.value.code == "pdf_expands_too_much"
+    rx.check_inflation(b"%PDF-1.4\nstream\nnot zlib at all\nendstream")   # junk streams are simply not counted
+
+
 def test_size_and_page_limits(tmp_path, fake):
     s = make_settings(tmp_path, resume_max_mb=1, resume_max_pages=2)
     client = TestClient(create_app(s, build_container(s, ollama=make_client_for(s, fake), executor=InlineExecutor())), base_url="http://127.0.0.1:3000")

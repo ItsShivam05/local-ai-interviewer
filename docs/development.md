@@ -7,8 +7,8 @@ follow, see [CONTRIBUTING.md](../CONTRIBUTING.md). For how the pieces fit togeth
 
 | Tool | Needed for | Notes |
 |---|---|---|
-| Python 3.10 or newer | backend, launcher | CI tests 3.10 and 3.12. |
-| Node.js 22.12+ (20.19+ is enough to run the app, not the frontend tests) | frontend | CI uses Node 22. Linux distribution packages are often too old: use the LTS from nodejs.org. |
+| Python 3.10 or newer | backend, launcher | CI tests 3.10 and 3.12. The maintainer develops on 3.13, which CI does not run. |
+| Node.js 22.12+ (20.19+ is enough to run the app, not the frontend tests) | frontend | CI uses Node 22 only, so the promise that 20.19+ runs the app is not checked by CI. Linux distribution packages are often too old: use the LTS from nodejs.org. |
 | Git | | |
 | [Ollama](https://ollama.com/download) | real interviews with a local model | Optional for development: the backend tests mock the model, and cloud mode needs no local Ollama. |
 | Google Chrome | the optional real-browser e2e scripts only | |
@@ -30,7 +30,7 @@ cd local-ai-interviewer
 
 `./start.sh` runs `scripts/run.sh`, which finds Python 3.10+ and runs `scripts/manage.py start`. On the first run the launcher:
 
-1. creates the virtualenv at `backend/.venv` and installs `backend/requirements.txt` (with `uv` if present, otherwise `pip`);
+1. creates the virtualenv at `backend/.venv` and installs `backend/requirements.lock` with `--require-hashes` (with `uv` if present, otherwise `pip`);
 2. runs `npm install` in `frontend/` if `frontend/node_modules` does not exist;
 3. builds the frontend (`npm run build`) when `frontend/dist` is missing or older than the sources;
 4. starts Ollama if it is installed but not running (set `OLLAMA_AUTOSTART=0` to prevent that);
@@ -71,12 +71,24 @@ The virtualenv created by `start.sh` has the runtime requirements only. Add the 
 
 ```bash
 # if you have uv installed (the launcher then created the venv without pip):
-uv pip install --python backend/.venv/bin/python -r backend/requirements-dev.txt
+uv pip install --require-hashes --python backend/.venv/bin/python -r backend/requirements-dev.lock
 # otherwise:
-backend/.venv/bin/python -m pip install -r backend/requirements-dev.txt
+backend/.venv/bin/python -m pip install --require-hashes -r backend/requirements-dev.lock
 ```
 
 `requirements-dev.txt` adds pytest, pypdf, pytest-cov, pip-audit and a pinned `ruff` (the same version CI uses).
+
+Run the frontend tests while the local model is idle: on an 8 GB Mac a model generating at the same time slowed single page tests
+from about 1 s to over 20 s in our runs, past their 15 s limit (2026-11-19; five runs on an idle machine passed 152/152 each).
+
+### Python dependencies: `.txt` and `.lock`
+
+You edit `backend/requirements.txt` and `backend/requirements-dev.txt` (version ranges). The launcher and CI install the generated
+`.lock` files instead: every package at one exact version, with the hashes of its files, for every platform and Python 3.10+.
+After changing a `.txt` file (or merging a Dependabot update to one), regenerate its lock with the command in the lock's header
+and commit both. `backend/tests/test_repository.py` fails if a lock no longer covers every package in its `.txt` file or has a pin
+without a hash; it does not notice a version bump inside a range, so regenerate the locks on every dependency change.
+The optional microphone set (`requirements-stt.txt`) is not locked.
 
 ### Backend
 
@@ -126,7 +138,8 @@ npm run build           # type check + production build into frontend/dist
 ## Optional: real-browser end-to-end scripts
 
 `frontend/e2e/*.mjs` drive your installed Google Chrome with puppeteer-core. Each script starts **its own backend on port 3100 with a
-throw-away data directory**, so your real interviews are never touched. Examples:
+throw-away data directory**, so your real interviews are never touched. If port 3100 is already in use (the app itself, or another e2e
+run) the script stops with a message; set `E2E_PORT` to use another port. `node e2e/harness-selftest.mjs` checks this. Examples:
 
 ```bash
 cd frontend
@@ -138,7 +151,8 @@ node e2e/full-flow.mjs     # a full interview with the REAL local models
 ```
 
 `npm run e2e`, `e2e:full`, `e2e:mic` and `e2e:voices` are shortcuts for four of them. The README's
-[Tests section](../README.md#12-tests) lists them all. CI does not run these scripts.
+[Tests section](../README.md#12-tests) lists them all. The CI job `e2e-linux` (written 2026-11-20, not yet run in CI) runs `qa-sweep` and
+`ui-audit` on Linux with no model; the others, which need a voice or the real model, run only on your machine.
 
 ## Optional: real-model integration tests
 
@@ -148,7 +162,17 @@ With Ollama running and `qwen3.5:4b` installed:
 RUN_INTEGRATION=1 backend/.venv/bin/python -m pytest -m integration -s backend/tests/integration
 ```
 
-These talk to the real local models and are not part of CI. If you change the grading prompt, run them and describe what you saw in
+The real Groq API has its own opt-in tests, which need only a key (never commit it, and it is never printed):
+
+```bash
+GROQ_API_KEY=gsk_... backend/.venv/bin/python -m pytest -m integration -s backend/tests/integration/test_real_groq.py          # connection, a few hundred tokens
+GROQ_API_KEY=gsk_... backend/.venv/bin/python -m pytest -m integration -s backend/tests/integration/test_real_groq_grading.py  # grading quality, about 12,000 tokens
+```
+
+A plain `pytest backend` never runs any of these: `backend/pytest.ini` deselects the `integration` marker, and the ordinary tests
+remove `GROQ_API_KEY`, `GROQ_BASE_URL` and the `CLOUD_*` variables from the environment, so a key in your shell cannot reach them.
+
+These talk to the real models and are not part of CI. If you change the grading prompt, run them and describe what you saw in
 the pull request: the quality of the 2.0 grading with a real model has not been measured systematically (see [ROADMAP](../ROADMAP.md)).
 
 ## Debugging

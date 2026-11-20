@@ -1,0 +1,8 @@
+{"source": "review", "question": "What is the difference between a list and a tuple in Python?", "detected": true, "score": 2.8, "classification": "partially_correct"}
+{"source": "review", "question": "What happens during a TCP three-way handshake?", "detected": true, "score": 2.9, "classification": "partially_correct"}
+{"source": "review", "question": "What is the difference between INNER JOIN and LEFT JOIN?", "detected": true, "score": 1.4, "classification": "no_attempt"}
+{"source": "review", "question": "What is a deadlock and how can you prevent it?", "detected": true, "score": 2.8, "classification": "partially_correct"}
+{"source": "new", "question": "What is idempotency in an ETL pipeline and how do you achieve it?", "detected": true, "score": 2.3, "classification": "partially_correct"}
+{"source": "new", "question": "What is overfitting in machine learning and how can you reduce it?", "detected": true, "score": 1.2, "classification": "no_attempt"}
+{"source": "new", "question": "What is a cache, what is cache invalidation, and what is one strategy for it?", "detected": false, "score": 0.7, "classification": "no_attempt"}
+{"source": "new", "question": "What does a Python generator do, and why would you use one?", "detected": true, "score": 2.9, "classification": "partially_correct"}

@@ -33,7 +33,7 @@ WINDOW = 3                              # most recent scored answers considered
 CONF_WEIGHT = {"high": 1.0, "medium": 0.7, "low": 0.35}
 TOPIC_EVIDENCE = 2                      # scored answers (not low-confidence) that make a topic "assessed"
 MIN_QUESTIONS_BEFORE_EARLY_END = 4
-UNCATEGORIZED = "General"
+UNCATEGORIZED = "Uncategorized"            # the same word the reports use for a question without a topic
 
 PRACTICAL_RE = re.compile(r"\b(how would you|design|build|implement|debug|troubleshoot|production|scenario|walk me through|optimi[sz]e|scale|handle|in practice|real.world|suppose|imagine)\b", re.I)
 CONCEPTUAL_RE = re.compile(r"\b(what is|what are|explain|why|difference between|define|compare|meaning of|how does|concept)\b", re.I)
@@ -181,13 +181,35 @@ _FUNCTION_WORDS = {"what", "when", "where", "which", "why", "how", "would", "cou
                    "difference", "between", "tell", "give", "example", "can", "its", "their", "them", "have", "has"}
 
 
+_TOKEN = re.compile(r"[a-z0-9][a-z0-9+#./-]*")
+
+
+def _content_words(text: str) -> set[str]:
+    """Words that tell two questions apart. Short tokens are kept when they carry a digit or a symbol: "L1" vs "L2", "HTTP/2" vs
+    "HTTP/3", "C" vs "C++" and "C#" are different subjects."""
+    out = set()
+    for t in _TOKEN.findall(text.lower()):
+        t = t.rstrip("./-")
+        if t and t not in _FUNCTION_WORDS and (len(t) > 2 or any(ch.isdigit() or ch in "+#" for ch in t)):
+            out.add(t)
+    return out
+
+
+def _canonical(text: str) -> str:
+    return re.sub(r"[^\w+#]+", " ", text.lower()).strip()
+
+
 def _similar(a: str, b: str) -> bool:
-    """Near-duplicate test on CONTENT words: "When would you use caching?" and "When would you use sharding?" are different."""
-    if re.sub(r"\W+", " ", a.lower()).strip() == re.sub(r"\W+", " ", b.lower()).strip():
+    """Near-duplicate test on CONTENT words: "When would you use caching?" and "When would you use sharding?" are different.
+    With fewer than three content words on either side there is too little to compare, so only the same text counts."""
+    if _canonical(a) == _canonical(b):
         return True
-    x = {t for t in re.findall(r"[a-z0-9]+", a.lower()) if len(t) > 2 and t not in _FUNCTION_WORDS}
-    y = {t for t in re.findall(r"[a-z0-9]+", b.lower()) if len(t) > 2 and t not in _FUNCTION_WORDS}
-    return bool(x and y) and len(x & y) / len(x | y) >= 0.75
+    x, y = _content_words(a), _content_words(b)
+    if len(x) < 3 or len(y) < 3:
+        return False
+    if any(ch.isdigit() or ch in "+#" for t in x ^ y for ch in t):
+        return False            # they differ in a version or a symbol ("Python 2"/"Python 3", "C"/"C++"): different subjects
+    return len(x & y) / len(x | y) >= 0.75
 
 
 # ---------------------------------------------------------------- selection
@@ -269,7 +291,7 @@ def decide_next(*, pool: list[PoolQ], history: list[Asked], state: EngineState, 
     if len(asked) >= MIN_QUESTIONS_BEFORE_EARLY_END:
         remaining_topics = {topic_of(q.topic) for q in candidates}
         if settings.strategy == "deep_dive" and focus:
-            fs = stats.get(focus)
+            fs = next((v for k, v in stats.items() if k.lower() == focus.lower()), None)       # topics compare without case, as selection does
             if fs and len(fs["scores"]) >= 4 and state.scored_since_change >= 2 and focus.lower() not in {t.lower() for t in remaining_topics}:
                 return Decision("end", "end_objectives", f"The focus topic {focus} has been explored in depth.", **base), state
         elif (len(stats) >= 2 and UNCATEGORIZED not in remaining_topics and UNCATEGORIZED not in stats

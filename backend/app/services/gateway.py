@@ -14,8 +14,9 @@ Rules that protect privacy and the user's Groq allowance:
 from __future__ import annotations
 
 import logging
+from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Any, Optional
+from typing import Any, Iterable, Iterator, Optional
 
 from .ai_config import AIConfig, AIConfigStore
 from .cloud import CloudClient
@@ -26,7 +27,22 @@ log = logging.getLogger("interviewer.gateway")
 
 ROLE_BY_PURPOSE = {"evaluation": "grader", "summary": "grader", "repair": "conversation", "followup": "conversation",
                    "resume_parse": "grader", "resume_questions": "grader"}
-NO_MODEL_FALLBACK = {"auth_failed", "auth_missing", "rate_limited", "budget_reached", "too_long"}   # reported to the user as they are, never papered over
+NO_MODEL_FALLBACK = {"auth_failed", "auth_missing", "rate_limited", "budget_reached", "too_long", "truncated", "cloud_consent_required"}   # reported to the user as they are, never papered over
+_RESUMES: ContextVar[Optional[tuple[Optional[int], ...]]] = ContextVar("resume_content", default=None)
+
+
+@contextmanager
+def resume_content(resume_ids: Iterable[Optional[int]]) -> Iterator[None]:
+    """Declare that every model request made inside this block contains text from these resumes (their extracted text, an excerpt
+    of a claim, or a question written about one). The gateway then sends it to the cloud ONLY if each resume has the user's
+    per-resume consent; in local mode nothing changes. An id of None means "a resume we can no longer identify": never sent.
+
+    This is the single enforcement point: callers do not have to remember to check, whatever route or mode switch led here."""
+    token = _RESUMES.set(tuple(dict.fromkeys(resume_ids)))
+    try:
+        yield
+    finally:
+        _RESUMES.reset(token)
 _ROUTE: ContextVar[Optional[dict[str, Any]]] = ContextVar("llm_route", default=None)
 
 
@@ -80,14 +96,29 @@ class LLMGateway:
             return self.local.chat_json(messages, schema, model=model, max_tokens=max_tokens, temperature=temperature, purpose=purpose)
         return self._cloud_chat(cfg, messages, schema, max_tokens, temperature, purpose)
 
+    def _resume_consent_error(self) -> Optional[LLMError]:
+        """The refusal for a cloud request that carries resume content the user has not allowed to be sent (None: allowed)."""
+        ids = _RESUMES.get()
+        if not ids:
+            return None
+        missing = self.ai.resumes_without_cloud_consent(ids)
+        if not missing:
+            return None
+        names = ", ".join(f"“{n}”" for n in missing)
+        return LLMError("cloud_consent_required", f"Cloud mode is on, but you have not allowed {names} to be sent to Groq. Open the resume (Resumes page) and "
+                                                  "press “Allow for cloud”, or switch to the local model in Settings → AI models. Nothing was sent.")
+
     def _cloud_chat(self, cfg: AIConfig, messages, schema, max_tokens, temperature, purpose) -> str:
         role = ROLE_BY_PURPOSE.get(purpose, "grader")
         primary = cfg.conversation_model if role == "conversation" else cfg.grader_model
+        blocked = self._resume_consent_error()
         # Backup models rescue ESSENTIAL work (grading, the report summary). Follow-up polish and voice-transcript cleanup are optional:
         # the caller has a free alternative (the grader's own draft / the raw transcript), so they get one attempt and no paid second try.
         essential = role == "grader"
         candidates = [primary] + ([cfg.fallback_model] if essential and cfg.use_fallback and cfg.fallback_model and cfg.fallback_model != primary else [])
-        last: Optional[LLMError] = None
+        if blocked is not None:
+            candidates = []                  # no cloud model may see it; the local model (if the user enabled that fallback) still may
+        last: Optional[LLMError] = blocked
         for i, model in enumerate(candidates):
             try:
                 self._check_budget(cfg)

@@ -182,7 +182,7 @@ export default function AIModels() {
           {s.key.set && (
             <div className="card c-test">
                 <h2>Test the connection</h2>
-                <p className="muted small" style={{ margin: "0 0 12px" }}>The first button only checks your key and lists the models you can use. It costs nothing. The second sends one tiny message (a few dozen tokens, it uses a tiny part of your rate limit).</p>
+                <p className="muted small" style={{ margin: "0 0 12px" }}>The first button only checks your key and lists the models you can use. It costs nothing. The second sends one tiny message (usually a few dozen tokens, at most about 250; it uses a small part of your rate limit).</p>
                 <div className="row">
                   <button className="btn primary" disabled={busy !== null || cool > 0} onClick={() => void runTest(false)}>{busy === "test" ? <span className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} /> : <Icon name="refresh" />}Test connection (free)</button>
                   <button className="btn" disabled={busy !== null || cool > 0} onClick={() => void runTest(true)}>Send one tiny test message</button>
@@ -206,8 +206,8 @@ export default function AIModels() {
               <h2>If a model fails</h2>
               <p className="muted small" style={{ margin: "0 0 12px" }}>What the app may do when the grader can’t answer. It never switches engines on its own.</p>
                 <div className="trows">
-                  <div className={`trow2 ${draft.use_fallback ? "on" : ""}`}><span className="ti"><Icon name="refresh" /></span><div className="t"><b>Use the fallback model if the grader fails</b><span>Tried once, only for grading and the report summary, and only for outages or an unknown model, never for a bad key or a reached rate limit.</span></div><Switch label="Use the fallback model" checked={draft.use_fallback} onChange={(v) => set("use_fallback", v)} /></div>
-                  <div className={`trow2 ${draft.fallback_to_local ? "on" : ""}`}><span className="ti"><Icon name="shield" /></span><div className="t"><b>If the cloud can’t be reached, use my local model instead</b><span>Sends nothing to the cloud. It needs the local model installed, and the feedback says which model graded it.</span></div><Switch label="Fall back to the local model" checked={draft.fallback_to_local} onChange={(v) => set("fallback_to_local", v)} /></div>
+                  <div className={`trow2 ${draft.use_fallback ? "on" : ""}`}><span className="ti"><Icon name="refresh" /></span><div className="t"><b>Use the fallback model if the grader fails</b><span>Tried once, only for grading, the report summary and resume work, and only for outages or an unknown model, never for a bad key, a reached rate limit or a reached spending limit.</span></div><Switch label="Use the fallback model" checked={draft.use_fallback} onChange={(v) => set("use_fallback", v)} /></div>
+                  <div className={`trow2 ${draft.fallback_to_local ? "on" : ""}`}><span className="ti"><Icon name="shield" /></span><div className="t"><b>If a cloud grading call fails, use my local model instead</b><span>For any failure: no connection, rate limit, spending limit, rejected key. That answer is then graded on this computer and nothing is sent. It needs the local model installed, and the feedback says which model graded it.</span></div><Switch label="Fall back to the local model" checked={draft.fallback_to_local} onChange={(v) => set("fallback_to_local", v)} /></div>
                 </div>
             </div>
           )}
@@ -253,6 +253,7 @@ export default function AIModels() {
                   </div>
                   <div>
                 <h3 style={{ marginTop: 0 }}>Prices (US dollars per million tokens)</h3>
+                <p className="muted small" style={{ margin: "0 0 8px" }}>Groq charges one rate all day, so leave the off-peak columns empty. They exist for a custom model that has a cheaper night rate.</p>
                 <div className="tscroll"><table className="usage-tbl price-tbl">
                   <thead><tr><th>Model</th><th className="num">Input</th><th className="num">Output</th><th className="num">Off-peak input</th><th className="num">Off-peak output</th></tr></thead>
                   <tbody>{priceNames.map((name) => {

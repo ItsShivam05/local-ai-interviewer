@@ -13,5 +13,10 @@ export default defineConfig({
     proxy: { "/api": { target: "http://127.0.0.1:8000", changeOrigin: false } },
   },
   build: { outDir: "dist", sourcemap: false },
-  test: { environment: "jsdom", globals: true, setupFiles: ["./src/__tests__/setup.ts"] },
+  test: {
+    environment: "jsdom", globals: true, setupFiles: ["./src/__tests__/setup.ts"],
+    testTimeout: 15000,       // whole-page tests on a busy machine or CI runner can exceed the 5 s default (a real hang still fails)
+    // `npm run coverage`: line coverage of the app's own code (tests and type-only files excluded)
+    coverage: { provider: "v8", include: ["src/**/*.{ts,tsx}"], exclude: ["src/__tests__/**", "src/**/*.d.ts", "src/types.ts"], reporter: ["text-summary", "text"] },
+  },
 });

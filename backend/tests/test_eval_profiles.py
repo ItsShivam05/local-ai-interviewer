@@ -115,3 +115,35 @@ def test_general_profile_is_v1_even_on_advanced_questions():
                                   "How do you index into a numpy array?", "What is regression testing?"])
 def test_ambiguous_questions_fall_back_to_general(text):
     assert ep.detect_category(topic=None, text=text) == "general"
+
+
+def test_a_complete_basic_definition_is_not_dragged_down_by_dimensions_it_never_asked_for():
+    """Real case (Groq, 18 Nov 2026): "What is table?" answered correctly and completely scored 7.8, because the SQL profile counted
+    problem-solving (scored 5) at full weight on a definition. With the general (v1) weights the same answer is 8.3."""
+    d = DimensionScores(correctness=9, completeness=8, depth=7, practical_application=6, clarity=9, production_awareness=0,
+                        conceptual_understanding=8, problem_solving=5, edge_cases=4)
+    sql = ep.score_answer(d, ep.get_profile("sql"), RubricSettings(), "basic", False)
+    assert sql.score >= 8.0
+    assert sql.weights["problem_solving"] < sql.weights["conceptual_understanding"]           # counted, but much less than what was asked
+    for profile in ("sql", "python", "data_engineering", "system_design", "software_engineering"):
+        p = ep.get_profile(profile)
+        basic, standard = (ep.effective_weights(p, RubricSettings(), lv, False) for lv in ("basic", "standard"))
+        for dim in ("problem_solving", "edge_cases", "tradeoffs", "depth", "practical_application"):
+            if dim in standard:
+                assert abs(basic[dim] - standard[dim] * ep.BASIC_FACTOR) < 1e-9, (profile, dim)
+    # a standard question still counts problem-solving in full
+    assert ep.score_answer(d, ep.get_profile("sql"), RubricSettings(), "standard", False).score < sql.score
+
+
+def test_every_dimension_has_a_long_and_a_short_label():
+    assert set(ep.ALL_DIMENSIONS) == set(ep.DIMENSION_LABELS) == set(ep.DIMENSION_SHORT_LABELS) == set(ep.DIMENSION_MEANING)
+    assert not any("_" in v for v in [*ep.DIMENSION_LABELS.values(), *ep.DIMENSION_SHORT_LABELS.values()])
+
+
+def test_an_all_zero_rubric_is_a_plain_mean_of_the_core_dimensions_in_every_profile():
+    """Backend audit, Nov 2026: with all six weights at zero an SQL answer with core dimensions at 9 scored 2.0 (only the extras counted)."""
+    zero = RubricSettings(correctness=0, completeness=0, depth=0, practical_application=0, clarity=0, production_awareness=0)
+    d = DimensionScores(correctness=9, completeness=9, depth=9, practical_application=9, clarity=9, production_awareness=0,
+                        conceptual_understanding=2, problem_solving=2, edge_cases=2)
+    for key in ep.PROFILES:
+        assert ep.score_answer(d, ep.get_profile(key), zero, "standard", True).score == 9.0, key

@@ -1,5 +1,8 @@
 """Interview Intelligence 2.0 end to end: profile-aware grading, grounding, provenance, consistency, analytics and privacy."""
+from contextlib import closing
 import json
+import time
+import os
 import sqlite3
 
 from conftest import answer, start_interview
@@ -24,7 +27,7 @@ def test_sql_question_is_graded_with_the_sql_profile_and_full_provenance(client,
     assert ev["profile"] == "sql" and ev["classification"] == "correct" and ev["evidence"][0]["verified"] is True
     assert abs(sum(ev["weights"].values()) - 1) < 0.01
     prov = ev["provenance"]
-    assert prov["prompt_version"] == "eval-2.0" and prov["rubric"].startswith("sql-v") and prov["input_hash"] and prov["graded_by"]["model"]
+    assert prov["prompt_version"] == "eval-2.1" and prov["rubric"].startswith("sql-v") and prov["input_hash"] and prov["graded_by"]["model"]
     assert "temperature" in prov
 
 
@@ -115,15 +118,26 @@ def test_redacted_export_removes_answers_quotes_and_usage(client, set_id, fake):
     assert client.get(f"/api/interviews/{st['id']}/report/export?format=pdf&redact=true").status_code == 200
 
 
+def test_the_share_safe_copy_has_a_plain_heading_not_a_repeated_one(client, set_id, fake):
+    """Review round 1: the redacted Markdown began "# Interview report: Interview report"."""
+    add(client, set_id, "What is a primary key?")
+    fake.chat_replies = [graded(7)]
+    st = start_interview(client, set_id, max_followups=0, feedback_mode="at_end", title="Acme final round")
+    st = answer(client, st, "An identifier for a row.").json()
+    md = client.get(f"/api/interviews/{st['id']}/report/export?format=md&redact=true").text
+    assert md.startswith("# Interview report (share-safe copy)\n") and "Acme" not in md
+    assert client.get(f"/api/interviews/{st['id']}/report/export?format=md").text.startswith("# Interview report: Acme final round\n")
+
+
 def test_backup_is_a_consistent_sqlite_copy(client, set_id, tmp_path):
     add(client, set_id, "Backup me?")
     r = client.get("/api/backup")
     assert r.status_code == 200 and r.headers["cache-control"] == "no-store"
     out = tmp_path / "b.sqlite3"
     out.write_bytes(r.content)
-    conn = sqlite3.connect(out)
-    assert conn.execute("SELECT COUNT(*) FROM questions WHERE text='Backup me?'").fetchone()[0] == 1
-    assert conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+    with closing(sqlite3.connect(out)) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM questions WHERE text='Backup me?'").fetchone()[0] == 1
+        assert conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
 
 
 def test_backup_is_blocked_cross_site(client):
@@ -186,7 +200,78 @@ def test_redaction_is_an_allow_list_across_all_formats(client, container, fake):
 def test_backup_never_uses_the_shared_temp_folder_and_cleans_leftovers(client, container):
     folder = container.settings.data_dir / "tmp"
     folder.mkdir(parents=True, exist_ok=True)
-    stale = folder / "interviewer-backup-old.sqlite3"
+    stale, in_flight = folder / "interviewer-backup-old.sqlite3", folder / "interviewer-backup-now.sqlite3"
     stale.write_bytes(b"x")
+    in_flight.write_bytes(b"y")                           # another download that is still being sent
+    two_hours_ago = time.time() - 7200
+    os.utime(stale, (two_hours_ago, two_hours_ago))
     assert client.get("/api/backup").status_code == 200
-    assert not stale.exists() and not list(folder.glob("interviewer-backup-*.sqlite3"))
+    assert not stale.exists() and list(folder.glob("interviewer-backup-*.sqlite3")) == [in_flight]
+
+
+def test_a_resume_reference_answer_with_invented_figures_is_flagged_and_labelled_as_guidance(client, container, fake):
+    """Real case (Groq, 18 Nov 2026): the reference answer to a resume question claimed "Latency is ~200-600 ms", which the candidate
+    never said. The grader cannot know the project, so the app checks the figures and says so, in the app, the Markdown and the PDF."""
+    import pypdfium2 as pdfium
+    from intel_fixtures import ready_resume
+    rid = ready_resume(container)
+    st = client.post("/api/interviews", json={"set_id": None, "config": {"include_bank": False, "max_followups": 0, "feedback_mode": "at_end"},
+                                              "resume_auto": {"resume_id": rid, "count": 2}}).json()
+    fake.chat_replies = [graded(7, extra={"ideal_answer": "The pipeline ran on Airflow with latency of ~200-600 ms and 40% less runtime."}),
+                         graded(7, extra={"ideal_answer": "A strong answer names your own part, the decision and how the 40% was measured."})]
+    for _ in range(2):
+        st = answer(client, st, "I owned the Airflow DAGs and cut runtime by 40% through partitioning").json()
+    rep = client.get(f"/api/interviews/{st['id']}/report").json()
+    flags = [[f["code"] for f in q["turns"][0]["evaluation"]["consistency_flags"]] for q in rep["questions"]]
+    assert "reference_figures_unverified" in flags[0] and "reference_figures_unverified" not in flags[1]      # 40% was said; 200-600 was not
+    msg = next(f["message"] for f in rep["questions"][0]["turns"][0]["evaluation"]["consistency_flags"] if f["code"] == "reference_figures_unverified")
+    assert "200" in msg and "600" in msg and "40" not in msg
+    md = client.get(f"/api/interviews/{st['id']}/report/export?format=md").text
+    assert "What a strong answer covers" in md and "**Reference answer:**" not in md and "illustrations, not facts about your work" in md
+    doc = pdfium.PdfDocument(client.get(f"/api/interviews/{st['id']}/report/export?format=pdf").content)
+    text = " ".join(doc[i].get_textpage().get_text_range() for i in range(len(doc))).replace("\r\n", " ").replace("\n", " ")
+    assert "What a strong answer covers" in text and "illustrations, not facts" in text
+
+
+def test_a_bank_question_keeps_the_suggested_answer_heading_and_is_never_flagged_for_figures(client, set_id, fake):
+    add(client, set_id, "How many bits are in a byte?")
+    fake.chat_replies = [graded(8, extra={"ideal_answer": "A byte has 8 bits; a kibibyte is 1024 bytes."})]
+    st = start_interview(client, set_id, max_followups=0, feedback_mode="at_end")
+    st = answer(client, st, "eight bits").json()
+    rep = client.get(f"/api/interviews/{st['id']}/report").json()
+    assert not any(f["code"] == "reference_figures_unverified" for f in rep["questions"][0]["turns"][0]["evaluation"]["consistency_flags"])
+    assert "**Suggested answer (written by the AI)" in client.get(f"/api/interviews/{st['id']}/report/export?format=md").text
+
+
+def test_share_safe_export_hides_resume_topics_the_title_and_exact_times(client, container, set_id, fake):
+    """Security audit, Nov 2026: a resume question's topic (often a project or employer name), the interview title and exact
+    timestamps survived redaction through `topics`, `progress`, the PDF title and the file name."""
+    import pypdfium2 as pdfium
+    from intel_fixtures import ready_resume
+    TOPIC, TITLE = "ZEBRATOPIC payments ledger", "ZEBRATITLE final round"
+    rid = ready_resume(container)
+    add(client, set_id, "What is a primary key?", "SQL", "easy")
+    rq = {"text": "How did the ledger reconcile payments?", "topic": TOPIC, "difficulty": "medium", "resume_id": rid, "resume_name": "Resume 1",
+          "claim": {"section": "Projects", "label": "Ledger", "excerpt": "Built a payments ledger."}}
+    for _round in range(2):                                   # twice, so "progress since last attempt" exists for both topics
+        fake.chat_replies = [graded(4), graded(8)]
+        r = client.post("/api/interviews", json={"set_id": set_id, "config": {"title": TITLE, "max_followups": 0, "feedback_mode": "at_end"},
+                                                 "resume_questions": [rq]})
+        assert r.status_code == 201, r.text
+        st = r.json()
+        for _ in range(2):
+            st = answer(client, st, "An answer").json()
+    iid = st["id"]
+    full = client.get(f"/api/interviews/{iid}/report/export?format=json").json()
+    assert any(t["topic"] == TOPIC for t in full["topics"]) and any(p["topic"] == TOPIC for p in full["progress"])       # present before redaction
+    red = client.get(f"/api/interviews/{iid}/report/export?format=json&redact=true")
+    data = red.json()
+    assert "ZEBRA" not in red.text
+    assert {t["topic"] for t in data["topics"]} == {"SQL", "Resume"} and [p["topic"] for p in data["progress"]] == ["SQL"]
+    assert data["interview"]["title"] == "Interview report" and len(data["interview"]["created_at"]) == 10                 # the day only
+    assert "ZEBRA" not in client.get(f"/api/interviews/{iid}/report/export?format=md&redact=true").text
+    pdf = client.get(f"/api/interviews/{iid}/report/export?format=pdf&redact=true")
+    assert "zebra" not in pdf.headers["content-disposition"].lower()
+    assert b"ZEBRA" not in pdf.content and b"/CreationDate (D:2026" not in pdf.content                                     # no title, no real creation time
+    doc = pdfium.PdfDocument(pdf.content)
+    assert "ZEBRA" not in "".join(doc[i].get_textpage().get_text_range() for i in range(len(doc)))

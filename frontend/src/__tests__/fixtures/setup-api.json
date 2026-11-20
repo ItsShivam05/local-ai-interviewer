@@ -1,0 +1,325 @@
+{
+ "idle": {
+  "/api/health": {
+   "app": "ok",
+   "bind": "127.0.0.1:3000",
+   "local_only": true,
+   "ollama": {
+    "ok": true,
+    "host": "http://127.0.0.1:11434",
+    "version": "0.40.12",
+    "error": null
+   },
+   "llm": {
+    "model": "qwen3.5:4b",
+    "installed": true,
+    "loaded": false,
+    "error": null
+   },
+   "tts": {
+    "model": "phonon",
+    "provider": "auto",
+    "engine": "phonon",
+    "installed": true,
+    "voices": 3,
+    "error": null,
+    "note": null
+   },
+   "stt": {
+    "available": true,
+    "model": "base.en",
+    "reason": null
+   },
+   "platform": "Darwin arm64",
+   "ai": {
+    "mode": "local",
+    "processing": "local",
+    "ready": null,
+    "grader_model": null,
+    "key_set": false,
+    "consented": false,
+    "budget": null,
+    "last_test_ok": null
+   },
+   "ocr": {
+    "available": true,
+    "enabled": true,
+    "version": "tesseract 5.5.4",
+    "reason": null,
+    "install": "brew install tesseract",
+    "install_all": {
+     "macos": "brew install tesseract",
+     "windows": "winget install UB-Mannheim.TesseractOCR",
+     "linux": "sudo apt install tesseract-ocr"
+    },
+    "os": "macos"
+   }
+  },
+  "/api/ai": {
+   "mode": "local",
+   "ready": true,
+   "config": {
+    "mode": "local",
+    "cloud_consent_at": null,
+    "grader_model": "openai/gpt-oss-120b",
+    "fallback_model": "openai/gpt-oss-20b",
+    "use_fallback": true,
+    "conversation_model": "openai/gpt-oss-20b",
+    "fallback_to_local": false,
+    "enforce_budget": true,
+    "daily_budget_usd": 1.0,
+    "total_budget_usd": null,
+    "prices": {
+     "openai/gpt-oss-120b": {
+      "input_per_m": 0.15,
+      "output_per_m": 0.6,
+      "offpeak_input_per_m": null,
+      "offpeak_output_per_m": null
+     },
+     "openai/gpt-oss-20b": {
+      "input_per_m": 0.075,
+      "output_per_m": 0.3,
+      "offpeak_input_per_m": null,
+      "offpeak_output_per_m": null
+     }
+    }
+   },
+   "key": {
+    "set": false,
+    "source": null,
+    "hint": null
+   },
+   "budget": {
+    "enforced": true,
+    "today": {
+     "spent_usd": 0.0,
+     "limit_usd": 1.0,
+     "percent": 0,
+     "reached": false
+    },
+    "total": {
+     "spent_usd": 0.0,
+     "limit_usd": null,
+     "percent": null,
+     "reached": false
+    }
+   },
+   "last_test": null,
+   "local_model": "qwen3.5:4b",
+   "roles": {
+    "grader": "Grades answers, writes the feedback and the report summary.",
+    "fallback": "Takes over automatically if the grader fails.",
+    "conversation": "Writes follow-up questions and cleans up voice transcripts."
+   },
+   "provider": {
+    "name": "Groq",
+    "keys_url": "https://console.groq.com/keys",
+    "data_url": "https://console.groq.com/docs/your-data",
+    "custom_host": null,
+    "retention": "Groq says it does not keep your text by default, but may log requests for up to 30 days to fix reliability problems or investigate abuse. Its servers are in the United States."
+   },
+   "sent_to_cloud": [
+    "Your interview questions",
+    "Your answers (typed, or the text of what you said)",
+    "Your expected answers / rubrics"
+   ],
+   "stays_local": [
+    "Your voice recordings and the speech-to-text",
+    "The spoken questions (voice)",
+    "Your database, reports and settings"
+   ]
+  },
+  "/api/voices": {
+   "engine": "phonon",
+   "voices": [
+    "default",
+    "Harper",
+    "Hugh"
+   ],
+   "default": "default",
+   "speed_supported": false,
+   "speed_note": "Phonon only supports normal speed; playback speed is applied by the browser's audio player."
+  },
+  "/api/sets": [
+   {
+    "id": 1,
+    "name": "My Questions",
+    "question_count": 3
+   }
+  ],
+  "/api/interviews": [],
+  "/api/resumes": [],
+  "/api/sets/1/questions": [
+   {
+    "id": 1,
+    "set_id": 1,
+    "position": 0,
+    "text": "Question number 1?",
+    "rubric": null,
+    "topic": "SQL",
+    "difficulty": null
+   },
+   {
+    "id": 2,
+    "set_id": 1,
+    "position": 1,
+    "text": "Question number 2?",
+    "rubric": null,
+    "topic": "Spark",
+    "difficulty": null
+   },
+   {
+    "id": 3,
+    "set_id": 1,
+    "position": 2,
+    "text": "Question number 3?",
+    "rubric": null,
+    "topic": "SQL",
+    "difficulty": null
+   }
+  ]
+ },
+ "active": {
+  "/api/interviews": [
+   {
+    "id": 1,
+    "title": "Fixture interview",
+    "interview_type": "technical",
+    "status": "in_progress",
+    "phase": "awaiting_answer",
+    "total": 3,
+    "answered": 0,
+    "skipped": 0,
+    "has_report": 0,
+    "average_score": null,
+    "planned": false
+   }
+  ]
+ },
+ "created": {
+  "mode": "fixed",
+  "adaptive": null,
+  "end_reason": null,
+  "time": {
+   "limit_s": null,
+   "elapsed_s": 0,
+   "remaining_s": null
+  },
+  "id": 1,
+  "title": "Fixture interview",
+  "interview_type": "technical",
+  "status": "in_progress",
+  "phase": "awaiting_answer",
+  "error": null,
+  "config": {
+   "title": "Fixture interview",
+   "interview_type": "technical",
+   "question_ids": null,
+   "order": "supplied",
+   "max_followups": 0,
+   "voice": "Harper",
+   "speech_speed": 1.0,
+   "strictness": "balanced",
+   "feedback_mode": "immediate",
+   "question_audio": "manual",
+   "mic_enabled": false,
+   "include_bank": true,
+   "mix": "bank_first",
+   "mode": "fixed",
+   "strategy": "progressive",
+   "start_level": "intermediate",
+   "max_questions": 8,
+   "time_limit_minutes": null,
+   "focus_topic": null
+  },
+  "current_turn_id": 1,
+  "progress": {
+   "total": 3,
+   "finished": 0,
+   "planned": false,
+   "answered": 0,
+   "skipped": 0,
+   "unanswered": 0,
+   "position": 1
+  },
+  "items": [
+   {
+    "id": 1,
+    "position": 0,
+    "text": "Question number 1?",
+    "topic": "SQL",
+    "difficulty": null,
+    "status": "active",
+    "followup_count": 0,
+    "source": "bank",
+    "resume_name": null,
+    "score": null
+   },
+   {
+    "id": 2,
+    "position": 1,
+    "text": "Question number 2?",
+    "topic": "Spark",
+    "difficulty": null,
+    "status": "pending",
+    "followup_count": 0,
+    "source": "bank",
+    "resume_name": null,
+    "score": null
+   },
+   {
+    "id": 3,
+    "position": 2,
+    "text": "Question number 3?",
+    "topic": "SQL",
+    "difficulty": null,
+    "status": "pending",
+    "followup_count": 0,
+    "source": "bank",
+    "resume_name": null,
+    "score": null
+   }
+  ],
+  "current": {
+   "pending_followup": null,
+   "item": {
+    "id": 1,
+    "position": 0,
+    "text": "Question number 1?",
+    "topic": "SQL",
+    "difficulty": null,
+    "followup_count": 0,
+    "followups_max": 0,
+    "followups_remaining": 0,
+    "source": "bank",
+    "resume_name": null
+   },
+   "turn": {
+    "id": 1,
+    "seq": 0,
+    "kind": "main",
+    "question_text": "Question number 1?",
+    "status": "asked",
+    "answer_text": null,
+    "answer_source": null,
+    "followup_reason": null,
+    "eval_attempts": 0
+   },
+   "thread": [
+    {
+     "id": 1,
+     "seq": 0,
+     "kind": "main",
+     "question_text": "Question number 1?",
+     "status": "asked",
+     "answer_text": null,
+     "answer_source": null,
+     "followup_reason": null,
+     "eval_attempts": 0
+    }
+   ]
+  },
+  "next_action": null,
+  "has_report": false
+ }
+}

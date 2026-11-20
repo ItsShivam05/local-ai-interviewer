@@ -167,7 +167,7 @@ export default function ReportPage({ id }: { id: number }) {
                 {t.kind === "followup" && <div><span className="badge accent">Follow-up</span> <b>{t.question}</b></div>}
                 {t.status === "skipped" ? <p className="muted">Skipped.</p> : <>
                   <div className="bubble-a">{t.answer ?? <i>No answer</i>}{t.source === "voice" && <span className="badge" style={{ marginLeft: 8 }}>voice</span>}</div>
-                  {t.evaluation ? <div style={{ marginTop: 12 }}><Feedback ev={t.evaluation} score={t.score ?? t.evaluation.score} /></div> : t.status === "submitted" ? <p className="muted small">Not evaluated (model error).</p> : null}
+                  {t.evaluation ? <div style={{ marginTop: 12 }}><Feedback ev={t.evaluation} score={t.score ?? t.evaluation.score} resume={q.source === "resume"} hasRubric={q.has_rubric} /></div> : t.status === "submitted" ? <p className="muted small">Not evaluated (model error).</p> : null}
                 </>}
               </div>
             ))}

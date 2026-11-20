@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import Feedback from "../components/Feedback";
 import type { Evaluation } from "../types";
@@ -53,7 +53,7 @@ describe("Feedback", () => {
     expect(screen.queryByText(/Edge-case awareness: /)).toBeNull();
     expect(screen.getByText("Verified in your answer")).toBeInTheDocument();
     expect(screen.getByText("Not verified")).toBeInTheDocument();
-    expect(screen.getByTestId("fb-unverified")).toHaveTextContent("Possible errors (not found in your answer, not counted)");
+    expect(screen.getByTestId("fb-unverified")).toHaveTextContent("Possible errors (not found in your answer, not counted as mistakes)");
     expect(screen.getByTestId("fb-unverified")).toHaveTextContent("Confuses UNION with JOIN");
     const how = screen.getByTestId("how-graded");
     expect(how).toHaveTextContent("Capped at 6"); expect(how).toHaveTextContent("Score and verdict were aligned.");
@@ -62,5 +62,28 @@ describe("Feedback", () => {
   it("adds nothing for evaluations without the new fields", () => {
     render(<Feedback ev={base} score={4.9} />);
     for (const id of ["fb-class", "fb-unverified", "fb-evidence", "how-graded", "fb-tags"]) expect(screen.queryByTestId(id)).toBeNull();
+  });
+
+  it("labels a resume question's reference as an outline and shows figures nobody mentioned", () => {
+    const flag = { code: "reference_figures_unverified", message: "The suggested answer mentions figures that are not in your answer or your resume (200, 600). They are illustrations, not facts about your work." };
+    const { rerender } = render(<Feedback ev={{ ...base, ideal_answer: "Latency is ~200-600 ms.", consistency_flags: [flag] }} score={7} resume />);
+    fireEvent.click(screen.getByRole("tab", { name: "Ideal Answer" }));
+    expect(screen.getByText("What a strong answer covers")).toBeInTheDocument();
+    expect(screen.queryByText("Suggested answer (written by the AI)")).toBeNull();
+    expect(screen.getByTestId("fb-unverified-figures")).toHaveTextContent("200, 600");
+    rerender(<Feedback ev={{ ...base, ideal_answer: "A primary key uniquely identifies a row." }} score={7} />);
+    expect(screen.getByText("Suggested answer (written by the AI)")).toBeInTheDocument();
+    expect(screen.queryByTestId("fb-unverified-figures")).toBeNull();
+  });
+
+  it("warns that the suggested answer is unchecked when the question has no expected answer (review round 3)", () => {
+    const ev = { ...base, ideal_answer: "Any tuple can be a dictionary key." };      // the kind of false statement the review found
+    const { rerender } = render(<Feedback ev={ev} score={7} hasRubric={false} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Ideal Answer" }));
+    expect(screen.getByTestId("fb-unchecked-answer")).toHaveTextContent("Not checked");
+    rerender(<Feedback ev={ev} score={7} hasRubric />);
+    expect(screen.queryByTestId("fb-unchecked-answer")).toBeNull();
+    rerender(<Feedback ev={ev} score={7} hasRubric={false} resume />);
+    expect(screen.queryByTestId("fb-unchecked-answer")).toBeNull();           // resume questions already say it is an outline
   });
 });

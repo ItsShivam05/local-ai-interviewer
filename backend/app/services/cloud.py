@@ -34,6 +34,8 @@ SCHEMA_NOTE = ("\n\nOUTPUT FORMAT: reply with ONE JSON object and nothing else (
                "It must match this JSON Schema:\n{schema}")
 MIN_OUTPUT_TOKENS = 1500          # headroom so a reasoning model's thinking cannot eat the whole answer
 TINY_OUTPUT_TOKENS = 200          # the connection test's one-word reply, with room for a little reasoning
+RETRY_MARGIN_S = 20.0             # after waiting out a rate limit there must be at least this long left for the reply itself
+TEST_LOCK_WAIT_S = 5.0            # the connection test does not queue behind a long grading request
 _CONTEXT_WORDS = re.compile(r"context|too long|too large|maximum.*tokens|reduce the length|token limit", re.I)
 _DURATION_PART = re.compile(r"(\d+(?:\.\d+)?)(ms|h|m|s)")
 
@@ -90,9 +92,14 @@ def humanise(seconds: float) -> str:
 
 def consume_sse(response: httpx.Response, deadline: float) -> tuple[str, dict[str, Any]]:
     """Read a chat-completions event stream: (the answer text, the usage block). Reasoning text, if a model streams any, is ignored:
-    only `delta.content` is the answer (and only the answer must be valid JSON)."""
+    only `delta.content` is the answer (and only the answer must be valid JSON).
+
+    A reply counts as complete only if the stream said so (`finish_reason` or `data: [DONE]`). One that hit the output limit
+    (`finish_reason: "length"`) or simply stopped is an error: partial JSON must never be handed on as if it were the answer."""
     parts: list[str] = []
     usage: dict[str, Any] = {}
+    finish: Optional[str] = None
+    done = False
     for line in response.iter_lines():
         if time.monotonic() > deadline:
             raise LLMError("timeout", "The model took too long to answer.")
@@ -101,6 +108,7 @@ def consume_sse(response: httpx.Response, deadline: float) -> tuple[str, dict[st
             continue
         data = line[5:].strip()
         if data == "[DONE]":
+            done = True
             break
         try:
             chunk = json.loads(data)
@@ -112,16 +120,28 @@ def consume_sse(response: httpx.Response, deadline: float) -> tuple[str, dict[st
             err = chunk["error"]
             msg = str(err.get("message") if isinstance(err, dict) else err)
             raise LLMError("model_missing" if "not found" in msg.lower() or "does not exist" in msg.lower() else "failed", msg[:300])
-        found = chunk.get("usage") or (chunk.get("x_groq") or {}).get("usage")
+        extra = chunk.get("x_groq")
+        found = chunk.get("usage") or (extra.get("usage") if isinstance(extra, dict) else None)
         if isinstance(found, dict):
             usage = found
-        for choice in chunk.get("choices") or []:
-            piece = (choice.get("delta") or {}).get("content")
+        choices = chunk.get("choices")
+        for choice in choices if isinstance(choices, list) else []:
+            if not isinstance(choice, dict):
+                continue
+            if choice.get("finish_reason"):
+                finish = str(choice["finish_reason"])
+            delta = choice.get("delta")
+            piece = delta.get("content") if isinstance(delta, dict) else None
             if isinstance(piece, str):
                 parts.append(piece)
     text = "".join(parts).strip()
+    if finish == "length":
+        raise LLMError("truncated", "The model's reply was cut off at the output limit before it finished. Press Retry; if it keeps happening, "
+                                    "raise CLOUD_MAX_TOKENS or lower CLOUD_REASONING_EFFORT in .env.")
     if not text:
         raise LLMError("bad_response", "The model returned an empty response.")
+    if not done and finish is None:
+        raise LLMError("bad_response", f"The connection to {PROVIDER_NAME} closed before the reply was complete.")
     return text, usage
 
 
@@ -208,10 +228,11 @@ class CloudClient:
     def chat_json(self, messages: list[dict[str, str]], schema: dict[str, Any], *, model: str, max_tokens: Optional[int] = None,
                   temperature: Optional[float] = None, purpose: str = "chat") -> str:
         headers = self._headers()
-        with self.lock:
-            deadline = time.monotonic() + self.settings.cloud_timeout_s
-            waited = False
-            for _ in range(4):                               # at most: one reasoning-switch retry and one rate-limit wait
+        deadline = time.monotonic() + self.settings.cloud_timeout_s
+        waited = False
+        for _ in range(4):                                   # at most: one reasoning-switch retry and one rate-limit wait
+            wait: Optional[float] = None
+            with self.lock:                                  # one request at a time; NEVER held while waiting out a rate limit
                 payload = self._payload(messages, schema, model, max_tokens, temperature)
                 try:
                     with self.http.stream("POST", "/chat/completions", json=payload, headers=headers) as r:
@@ -222,20 +243,24 @@ class CloudClient:
                                 continue
                             if r.status_code == 429:
                                 err, wait = self._rate_limited(r.headers, model)
-                                if not waited and wait is not None and time.monotonic() + wait + 1 < deadline:
-                                    waited = True                    # wait ONCE, and only if the reply can still arrive inside the deadline
-                                    log.info("cloud rate limit: waiting %.1fs once before retrying", wait)
-                                    self.sleep(wait + 0.5)
-                                    continue
-                                raise err
-                            self._raise_for(r.status_code, body, model, r.headers)
-                        text, usage = consume_sse(r, deadline)
-                        self._report(usage, model, purpose)
-                        return text
-                except LLMError:
+                                # wait ONCE, and only if a full reply can still arrive inside the deadline afterwards
+                                if waited or wait is None or time.monotonic() + wait + RETRY_MARGIN_S > deadline:
+                                    raise err
+                            else:
+                                self._raise_for(r.status_code, body, model, r.headers)
+                        else:
+                            text, usage = consume_sse(r, deadline)
+                            self._report(usage, model, purpose)
+                            return text
+                except LLMError as e:
+                    e.message = self._redact(e.message)      # also errors a server put INSIDE the stream: the key never reaches a message or a log
+                    e.args = (e.message,)
                     raise
                 except httpx.HTTPError as e:
                     raise self._transport_error(e) from e
+            waited = True
+            log.info("cloud rate limit: waiting %.1fs once before retrying", wait)
+            self.sleep(wait + 0.5)                           # other cloud work (another answer, the connection test) can run meanwhile
         raise LLMError("failed", f"{PROVIDER_NAME} rejected the request.")
 
     # ------------------------------------------------------------ connection test (no inference unless asked)
@@ -256,7 +281,9 @@ class CloudClient:
     def tiny_message(self, model: str) -> dict[str, Any]:
         """One very small real request (a few dozen tokens) to prove a model answers. Only on explicit request."""
         headers = self._headers()
-        with self.lock:
+        if not self.lock.acquire(timeout=TEST_LOCK_WAIT_S):
+            raise LLMError("busy", "Another cloud request (grading or reading a resume) is running. Try the test again in a moment.")
+        try:
             for attempt in range(2):
                 payload = {"model": api_name(model), "messages": [{"role": "user", "content": "Reply with the single word: ok"}], "stream": False,
                            "temperature": 0, "max_completion_tokens": TINY_OUTPUT_TOKENS, **self._reasoning(model)}
@@ -270,6 +297,8 @@ class CloudClient:
                 if r.status_code != 200:
                     self._raise_for(r.status_code, r.text, model, r.headers)
                 break
+        finally:
+            self.lock.release()
         try:
             reply = r.json()
             usage = reply.get("usage") or {}

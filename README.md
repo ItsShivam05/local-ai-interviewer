@@ -44,7 +44,7 @@ You need Python ≥ 3.10, Node.js 20.19+ or 22.12+ (the current LTS is fine), [O
 
 | | |
 |---|---|
-| **Evidence-checked grading** — every answer is scored by the app from validated dimension scores, with a profile per subject (SQL, Python, data engineering, ML, system design, behavioural …). The grader must quote your words; claimed mistakes it cannot quote are shown but never counted. [How grading works](docs/evaluation.md) | <img src="docs/assets/screenshots/report.png" alt="Interview report with score ring, scorecard and topic performance" width="420"> |
+| **Evidence-checked grading** — every answer is scored by the app from validated dimension scores, with a profile per subject (SQL, Python, data engineering, ML, system design, behavioural …). The grader must quote your words: a mistake it claims but cannot quote is shown as unverified and left out of the mistakes list and the correct/incorrect verdict (the score still comes from the grader's dimension ratings, which that claim may have influenced). [How grading works](docs/evaluation.md) | <img src="docs/assets/screenshots/report.png" alt="Interview report with score ring, scorecard and topic performance" width="420"> |
 | **Adaptive interviews** — six strategies (progressive, deep-dive, practical, conceptual, mixed, resume-based) choose each next question and difficulty from your answers, with a plain-language reason for every decision and a time limit. [Adaptive behaviour](docs/adaptive-interviews.md) | <img src="docs/assets/screenshots/setup-adaptive.png" alt="Interview setup with the adaptive mode, strategy cards and starting level" width="420"> |
 | **Resume intelligence** — a candidate profile checked line by line against your PDF: skills with evidence-based confidence, areas worth preparing, and offline questions tied to real resume statements. Injection-like text is flagged and never followed. [Resume intelligence](docs/resume-intelligence.md) | <img src="docs/assets/screenshots/candidate-profile.png" alt="Candidate profile with an injection warning, extraction quality and skills with confidence and source lines" width="420"> |
 | **Progress you can see** — dashboard with score trend, weakest topics and one-click practice; reports with skills, difficulty-wise results, progress since your last attempt, a learning plan, PDF/Markdown/JSON and share-safe exports. | <img src="docs/assets/screenshots/dashboard.png" alt="Home dashboard with average score, trend chart and focus areas" width="420"> |
@@ -123,8 +123,8 @@ Safety properties:
 | Platform | Status | Voice for questions |
 |---|---|---|
 | macOS, Apple Silicon (M1–M4) | **Built and fully verified** (unit, API, real-Chrome and real-model tests) | Phonon (premium, optional) or system voices |
-| Windows 10 / 11 | Implemented; **not yet run on a real Windows machine** — the CI workflow runs the backend and launcher tests there | System voices (Microsoft David, Zira, …) |
-| Linux (x86-64 / arm64) | Implemented; **not yet run on real Linux** — CI covers the backend and launcher | System voices if `speech-dispatcher` + `espeak-ng` are installed, otherwise text only |
+| Windows 10 / 11 | Implemented; **not yet run on a real Windows machine** — CI runs the backend and frontend tests and the launcher's `check` there (last run: 2026-11-18, green). A CI step for `start` → health check → `stop` through the `.bat` wrappers was written on 2026-11-20 but **has not run in CI yet** | System voices (Microsoft David, Zira, …) |
+| Linux (x86-64 / arm64) | Implemented; **not yet run on real Linux** — CI runs the backend and frontend tests and the launcher's `check` (last run: 2026-11-18, green); a `start` → health check → `stop` step was written on 2026-11-20 and **has not run in CI yet** (it passed when run by hand on macOS) | System voices if `speech-dispatcher` + `espeak-ng` are installed, otherwise text only |
 | macOS, Intel | Expected to work; untested (the LLM will be slow without Apple Silicon) | System voices |
 
 Resume OCR (Tesseract) is optional on every platform; typed PDF resumes need nothing extra (see §5a).
@@ -146,7 +146,7 @@ Everything else — the LLM, grading, follow-ups, reports, optional Whisper micr
 | Groq API key (optional, only for cloud mode) | yes | only while cloud mode is on; see §7a |
 | **Everything else — running interviews, speech, evaluation, reports (local mode)** | **no** | **works offline** |
 
-In local mode the backend sets `HF_HUB_OFFLINE=1`, refuses non-loopback Ollama URLs, and the UI uses system fonts and no CDN.
+In local mode the backend sets `HF_HUB_OFFLINE=1`, refuses non-loopback Ollama URLs, and the UI loads nothing from a CDN: its one font (Inter, SIL Open Font License 1.1) is bundled with the app.
 
 Required on every platform: Node.js 20.19+ or 22.12+ (the current LTS; Linux distribution packages are often older — use nodejs.org), Python ≥ 3.10, [Ollama](https://ollama.com/download), and Chrome or Edge. About 5 GB free disk and 8 GB RAM (see §7).
 
@@ -172,6 +172,11 @@ setup-models.bat
 setup-models.bat --stt
 start.bat                                  :: opens http://localhost:3000 for you
 ```
+
+**How long the first start takes (measured 2026-11-19, MacBook Air M2, home broadband, empty pip / uv / npm caches):** 39 s with
+pip, 49 s with uv, from `./start.sh` to a working app (about 60 MB downloaded). Downloading the model is extra: about 4 GB, so it
+depends on your connection (not measured here; the model was already installed). To repeat the measurement on a fresh copy of the
+repository: `PIP_CACHE_DIR=$(mktemp -d) UV_CACHE_DIR=$(mktemp -d) npm_config_cache=$(mktemp -d) time ./start.sh`.
 
 You can also double-click `start.bat` in File Explorer; the window stays open so you can read the messages.
 Prerequisites on Windows: `winget install OpenJS.NodeJS.LTS`, `winget install Python.Python.3.12` (tick *Add python.exe to PATH*), and Ollama from <https://ollama.com/download/windows>.
@@ -226,7 +231,7 @@ On phones it becomes a slide-in drawer (☰ button).
 
 **Interview customization** — five numbered sections (Basics · Questions · Interviewer · Evaluation · Experience) built from option cards and segmented controls, a searchable
 **voice picker with a ▶ preview on every voice**, and a sticky **session summary** (type, questions, follow-ups, voice, strictness, estimated time, model readiness).
-**Settings** has three tabs: local services, profile, and an evaluation-rubric editor with presets and a live weight-distribution bar.
+**Settings** has four tabs: local services, AI models (local or cloud, key, budget, prices), profile, and an evaluation-rubric editor with presets and a live weight-distribution bar.
 
 Deviations, all deliberate: replay and stop buttons sit next to the speaker button (required by the brief); a *Pause / End interview* link row sits under the answer card;
 the *Voice (Phonon)* names are the model's own (no gender labels exist); the *Repeat each question automatically* switch is labelled *Read each question aloud automatically* because that is what it does.
@@ -309,7 +314,7 @@ The app looks for it via `TESSERACT_CMD`, then `PATH`, then the installers' defa
 
 1. The model returns a schema-constrained JSON object (local: Ollama `format` = JSON Schema; cloud: Groq's own structured-output mode cannot be streamed, so the same schema is placed in the prompt and the reply is validated and, if needed, repaired once): correct points, missing concepts, misconceptions,
    six 0–10 dimension scores (correctness, completeness, depth, practical application, clarity, production awareness), suggested improvements,
-   a ≤90-word reference answer, confidence + uncertainty note, a follow-up proposal with its reason, and a `question_level` (basic / standard / advanced).
+   a ≤90-word suggested answer (shown as written by the AI, and as *not checked* when you supplied no expected answer), confidence + uncertainty note, a follow-up proposal with its reason, and a `question_level` (basic / standard / advanced).
 2. The reply is validated with Pydantic (scores clamped, lists trimmed). If it is malformed the app makes **one** repair request; if that also fails,
    the answer stays saved and you can press Retry. Candidate text is fenced and declared untrusted to resist prompt injection.
 3. **The final score is computed by the app**, not the model: a weighted mean of the dimension scores (weights editable in Settings; production awareness only counts
@@ -346,7 +351,7 @@ Phonon facts verified on the installed model: `POST /v1/audio/speech` `{model, i
 accepted**, so the speed slider uses the browser's `playbackRate` (pitch preserved); voices come from `/api/show`; long text is chunked by sentence and stitched;
 empty audio is detected and reported; audio is cached under `data/audio_cache` (≤200 MB, LRU). Phonon is text-to-speech only; speech input is separate (Whisper).
 
-**Measured on this MacBook Air M2 (8 GB)** — one evaluation (≈400–600 generated tokens) takes **18–38 s** (≈20 tokens/s); the first request after the model was
+**Measured on this MacBook Air M2 (8 GB)** — one evaluation (≈400–600 generated tokens) took **18–38 s** (≈20 tokens/s) with nothing else running; in the grading benchmark (168 gradings, 2026-11-19, a normally busy machine) the median was **44 s** and the slowest 150 s, and independent reviews measured 26–84 s. Expect 30–60 s; the first request after the model was
 unloaded adds ≈15 s load time. The report summary takes a similar time and runs in the background. With a 4 GB model resident, macOS reported ~11 % free memory
 during tests — close heavy Chrome tabs/apps while practicing, and use `./stop.sh --unload` afterwards. Only one LLM request runs at a time.
 I did not benchmark a smaller model: no other compatible LLM was installed, and `qwen3.5:4b` ran reliably, so I avoided another multi-GB download. If you need
@@ -379,7 +384,7 @@ and every API reply carries `prompt_eval_count`, `eval_count`, `load_duration`, 
 The app can send grading to [Groq](https://groq.com) instead of your own computer — faster, no 4 GB model in RAM, and usually better grading. It is **off until you turn it on**, and you bring your own Groq API key.
 
 **Turn it on:** create a key at <https://console.groq.com/keys>, then open **Settings → AI models**, paste the key, read and tick the consent box and switch to cloud models.
-Press **Test connection (free)** once: it only lists the models your key can use (no tokens). **Send one tiny test message** is a separate, optional button (a few dozen tokens). Both buttons lock for a few seconds after use.
+Press **Test connection (free)** once: it only lists the models your key can use (no tokens). **Send one tiny test message** is a separate, optional button (usually a few dozen tokens, never more than about 250). Both buttons lock for a few seconds after use.
 You can instead set `GROQ_API_KEY` in `.env` (it then takes precedence and nothing is stored). Switch back any time with **On this computer**; local mode never contacts Groq.
 
 | Role | Default model | Used for |
@@ -391,16 +396,16 @@ You can instead set `GROQ_API_KEY` in `.env` (it then takes precedence and nothi
 These two models are the ones offered; you can also type any other model id your key can use. *Test connection* marks each chosen model "available" or "not found" for your key. Choosing the grader's own model as the fallback shows a warning, because it could not take over.
 `CLOUD_REASONING_EFFORT` (`low` by default; `medium`, `high`) sets how much the models reason before answering — higher is slower and uses more of your token allowance.
 
-**Free plan and its limits.** Groq's Free plan is not billed; it is **rate-limited per model**. Read on Groq's rate-limits page on 2026-11-18 for both default models: 30 requests and 8,000 tokens per minute, 1,000 requests and 200,000 tokens per day — check [your own limits](https://console.groq.com/docs/rate-limits), they change. In practice that is roughly 2–3 graded answers a minute and several dozen a day. Organising a resume makes several requests in a row and usually reaches the per-minute limit: the app then **waits and continues** (it takes a few minutes instead of seconds). If a limit cannot be waited out inside one request (for example the daily allowance), you get a message that says when it resets; your answer is kept, press Retry then.
+**Free plan and its limits.** Groq's Free plan is not billed; it is **rate-limited per model**. Read on Groq's rate-limits page on 2026-11-18 for both default models: 30 requests and 8,000 tokens per minute, 1,000 requests and 200,000 tokens per day — check [your own limits](https://console.groq.com/docs/rate-limits), they change. In practice that is roughly 2–3 graded answers a minute and several dozen a day. Organising a resume makes several requests in a row and usually reaches the per-minute limit: the app then **waits and continues** (it takes a few minutes instead of seconds). Cloud requests go one at a time, so an answer submitted while a resume is being organised is graded after the request in progress finishes. If a limit cannot be waited out inside one request (for example the daily allowance), you get a message that says when it resets; your answer is kept, press Retry then.
 
 **Privacy.** Sent to Groq's servers: the question, your rubric/expected answer if any, your answer (the text, after voice transcription) and the follow-up thread; for resumes, the extracted text, only after you allow it for that resume. Stays on your computer: voice recordings and transcription (Whisper), the question audio, your database, reports, and the usage numbers. Consent is recorded before the first call. Groq's [data policy](https://console.groq.com/docs/your-data) (read 2026-11-18) says it does not retain your text by default, but **may log requests for up to 30 days** to fix reliability problems or investigate abuse, on servers in the United States; you can switch on *Zero Data Retention* in your Groq console. The API key is write-only in the UI (only the last four characters are shown), is never returned by the API, logged or exported, and is stored in plain text in `data/interviewer.sqlite3` (file mode 600) unless you use `GROQ_API_KEY` — **copying the `data` folder as a backup copies the key**; remove it first or use the environment variable.
 
-**Cost tracking and budget.** Every cloud call is recorded in **Model usage** (☁ badge, provider filter, estimated dollars per task, per model and per interview, also shown in each report and in its feedback screen). On the Free plan nothing is billed, so these figures show what the same use **would** cost on a paid Groq plan. You can still set a **daily** and/or **total** dollar limit; the app checks it *before* every call and makes no request once it is reached (your answer is kept; raise the limit and press Retry).
+**Cost tracking and budget.** Every cloud call is recorded in **Model usage** (☁ badge, provider filter, estimated dollars per task, per model and per interview, also shown in each report and in its feedback screen). On the Free plan nothing is billed, so these figures show what the same use **would** cost on a paid Groq plan. A **daily** limit of $1 is set and enforced by default, and you can change it, add a **total** limit, or switch enforcement off; the app checks the limits *before* every call and makes no request once one is reached (your answer is kept; raise the limit and press Retry). The total is counted in a separate running figure that *Clear usage* does not reset.
 The built-in prices are from Groq's model table (read 2026-11-18): `openai/gpt-oss-120b` $0.15 in / $0.60 out per 1M tokens, `openai/gpt-oss-20b` $0.075 / $0.30. Reasoning tokens count as output; cached input may be billed lower, so estimates are upper bounds. Your own price edits are kept. A model with no price is shown as "unknown", never as free.
 
-**Safety rules.** The fallback model and the optional "if the cloud is unreachable, use my local model" switch apply only to grading, never to optional steps (follow-up polish, repair), so a failure cannot silently multiply calls. A rejected key, a rate limit and a text that is too long are reported as they are and never retried on another model. The app never switches engines by itself.
+**Safety rules.** The fallback model and the optional "if a cloud grading call fails, use my local model" switch apply only to essential work (grading, the report summary, reading a resume), never to optional steps (follow-up polish, repair), so a failure cannot silently multiply calls. A rejected key, a rate limit, a reached spending limit, a reply cut off for length, a text that is too long and a resume you have not allowed for the cloud are reported as they are and never retried on the other cloud model. With the local-model switch on, any failed essential cloud call (including those) is done on this computer instead, and the feedback names the model that graded it; with it off (the default) the app never switches engines by itself.
 
-**Upgrading from a version that used Ollama cloud.** The first start after the upgrade switches the app back to local mode, deletes the saved Ollama cloud key and clears the consent you gave (also for each resume): a key and a consent given for one company's service do not carry over to another's. To use cloud mode again, add a Groq key and agree to the new notice. Your budgets, history and reports are kept; `OLLAMA_API_KEY` and `OLLAMA_CLOUD_URL` in `.env` are ignored (use `GROQ_API_KEY` / `GROQ_BASE_URL`).
+**Upgrading from a version that used Ollama cloud.** The first start after the upgrade switches the app back to local mode, deletes the saved Ollama cloud key and clears the consent you gave (also for each resume): a key and a consent given for one company's service do not carry over to another's. To use cloud mode again, add a Groq key and agree to the new notice. Your budgets, the two fallback switches, history and reports are kept; custom cloud model names and edited prices return to the Groq defaults; `OLLAMA_API_KEY` and `OLLAMA_CLOUD_URL` in `.env` are ignored (use `GROQ_API_KEY` / `GROQ_BASE_URL`).
 
 ## 8. Microphone (optional)
 
@@ -439,8 +444,12 @@ curl -s localhost:3000/api/health                   # "local_only": true, ollama
 curl -H 'Host: evil.example' -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3000/api/health   # 403
 ```
 
-Turn Wi-Fi off and run an interview — everything still works. Chrome DevTools → Network shows only `localhost` requests. The test-suite also asserts that every
-outbound call goes to the Ollama loopback host and that the only external addresses in the source are the cloud provider's (Groq's API base and the two pages Settings links to, all in `backend/app/config.py`), used only after you opt in.
+**Checked without any network:** `python3 scripts/offline_check.py` (macOS) starts the backend inside a sandbox that refuses every
+connection except to this computer, then runs a real interview through it: spoken question, grading by the local model, follow-ups,
+report with written summary, PDF. On 2026-11-19 (MacBook Air M2) all 7 checks passed and the only address the backend connected to
+was `127.0.0.1`. Switching Wi-Fi off yourself is the same test by hand; in Chrome DevTools → Network you should see only `localhost`
+requests. The test-suite also asserts that every
+outbound call goes to the Ollama loopback host and that the only external addresses the app can contact are the cloud provider's (Groq's API base, in `backend/app/config.py`, used only after you opt in). The source also contains a few addresses that are only ever shown to you as links and never fetched by the app: two Groq pages in Settings, and the download pages for Ollama, Python and Node.js in the launcher's help text.
 
 ## 11. Known limitations
 
@@ -449,43 +458,53 @@ outbound call goes to the Ollama loopback host and that the only external addres
   rubric. Add expected answers for questions you care about; use feedback as a study aid.
 * Evaluation takes ~20–40 s per answer (see §7); the UI shows progress and you can leave and come back.
 * **Windows and Linux support is new and untested on real machines** (see *Supported platforms*). The launcher's OS-specific decisions are unit-tested and the
-  system-voice path was verified in real Chrome on macOS, but process start/stop on Windows, the `.bat` wrappers and the Linux voice setup have not been run
-  there. Please report problems.
+  system-voice path was verified in real Chrome on macOS. A CI step that starts and stops the app with the launcher on Windows (through the `.bat` wrappers) and Linux,
+  without Ollama, has been written but not yet run in CI; a real interview, the voices and the Linux voice setup have not been run there. Please report problems.
 * System voices vary by computer and are less natural than Phonon; speed is honoured natively. On Linux, Chrome often exposes no offline voice unless
   `speech-dispatcher` and `espeak-ng` are installed — then questions are shown as text only.
 * Phonon only supports speed 1 (speed slider is client-side) and many of its 38 voices are character voices; pick a neutral one (e.g. *Harper*, *Hugh*) with the preview button.
 * Microphone transcription was verified end-to-end with Phonon speech fed through Chrome's real `MediaRecorder`, not with a physical microphone (headless Chrome cannot
   provide one). Chrome's microphone permission prompt and `base.en` accuracy on your voice/accent are untested; use `STT_MODEL=small.en` for better accuracy (~0.5 GB).
-* **Cloud mode (Groq) was verified against a mock server only** (a fake Groq API used by the tests and `e2e/cloud.mjs`), not against the real service: where a streamed reply reports token usage, the exact wording of some errors and the free-plan limits come from Groq's documentation, not from a real call. Press *Test connection* once with your key; `GROQ_API_KEY=… python -m pytest -m integration backend/tests/integration/test_real_groq.py` checks the real API with a few hundred tokens. Cost numbers are estimates (see §7a).
+* **Cloud mode (Groq) has had one real run, and is otherwise tested against a fake server.** One full typed interview was run by hand against the real Groq service on 18 Nov 2026 (17 requests, token usage recorded on every one, no rate limit reached). Everything else (the automated tests and `e2e/cloud.mjs`) uses a fake Groq API, so the rate-limit wait, the fallback model, the exact wording of some errors and the free-plan limits are known from Groq's documentation, not from real calls. The grading prompt was changed after that run (eval-2.1) and has not been re-measured against the real grader. Press *Test connection* once with your key; `GROQ_API_KEY=… backend/.venv/bin/python -m pytest -m integration backend/tests/integration` checks the real API (connection: a few hundred tokens; grading: about 12,000). Cost numbers are estimates (see §7a).
 * The cloud grader does not use Groq's structured-output mode (it cannot be streamed), so a rare malformed reply costs one extra repair call.
 * On Groq's Free plan, organising a resume or a fast run of answers can hit the per-minute limit; the app waits once per request and then reports when the limit resets.
 * Single-user, no login: anyone with access to your logged-in computer session can open `localhost:3000`.
 * Follow-ups after “I don’t know”-style answers are suppressed by a short-phrase heuristic; unusual wording may still get a follow-up.
-* **2.0 features were verified with a mocked model only** (unit/API tests and real-Chrome UI audits); grading quality of the new
-  evidence/profile prompt with the real `qwen3.5:4b` was not re-measured, and the adaptive engine's thresholds are documented heuristics,
-  not tuned on real interview data. Quote verification proves a quote exists in your answer, not that the grader judged it correctly.
+* **Grading quality was measured on a small labelled set, not by independent graders.** With the real `qwen3.5:4b` (prompt eval-2.1,
+  56 answers x 3 runs, 2026-11-19) the app ranked strong > partial > wrong answers correctly in 70 of 70 pairs and 55 of 56 answers
+  fell in the score band set before the run; it missed one plausible wrong claim and called it correct. The labels are the project's
+  own, on one machine, typed answers only: see [evaluation §8](docs/evaluation.md#8-measured-grading-quality-benchmark). The other
+  2.0 features (adaptive engine, resume intelligence) were verified with a mocked model only, and the adaptive engine's thresholds are
+  documented heuristics, not tuned on real interview data. Quote verification proves a quote exists in your answer, not that the
+  grader judged it correctly.
 * Adaptive time limits count time spent waiting for grading; the limit is checked when the next question would start.
 * The offline resume-question catalogue covers ~35 technologies and activities; others get project deep-dive and clarification questions only.
-* The Wi-Fi-off experiment was not physically performed; offline operation is established by tests that assert every request goes to loopback only.
+* Offline operation was checked on macOS with a sandbox that blocks all non-loopback connections (`scripts/offline_check.py`, §10), not by switching Wi-Fi off, and not on Windows or Linux (there the loopback-only tests are the evidence).
 
 ## 12. Tests
 
 The same checks CI runs (see [docs/development.md](docs/development.md) for setup and details):
 
 ```bash
-backend/.venv/bin/ruff check .                               # Python lint (bug-finding rules, ruff.toml); install backend/requirements-dev.txt first
+backend/.venv/bin/python -m pip install --require-hashes -r backend/requirements-dev.lock   # once: test and lint tools (hash-locked). If the launcher made the venv with uv it has no pip:
+#   uv pip install --require-hashes --python backend/.venv/bin/python -r backend/requirements-dev.lock
+backend/.venv/bin/ruff check .                               # Python lint (bug-finding rules, ruff.toml)
 python3 scripts/check_docs.py                                # every Markdown link, image and #anchor
 backend/.venv/bin/python -m pytest backend --cov=backend/app # backend tests + line coverage (94% when measured on 2026-11-15)
 cd frontend && npm run lint && npm run typecheck && npm test && npm run build
+cd frontend && npm run coverage                              # frontend line coverage: 41% on 2026-11-19 (helpers, components, the Setup, Interview and Report pages; the other pages only by the e2e scripts below)
 ```
+
+What the maintainer's machine showed for all of these, with dates: [docs/verification.md](docs/verification.md).
 
 More, including the real-browser and real-model suites:
 
 ```bash
 backend/.venv/bin/python -m pytest backend                  # unit/API/launcher tests with a mocked Ollama (httpx.MockTransport); Windows: backend\\.venv\\Scripts\\python -m pytest backend
-RUN_INTEGRATION=1 backend/.venv/bin/python -m pytest -m integration -s backend/tests/integration   # real qwen3.5:4b + Phonon
+RUN_INTEGRATION=1 backend/.venv/bin/python -m pytest -m integration -s backend/tests/integration   # real qwen3.5:4b + Phonon (and real Groq when GROQ_API_KEY is set)
 cd frontend && npm test && npm run typecheck                # audio controller + types
 cd frontend && node e2e/basics.mjs                          # real Chrome, isolated backend on :3100, no LLM needed
+cd frontend && node e2e/harness-selftest.mjs                # the e2e harness refuses a port another server already uses (E2E_PORT picks another port)
 cd frontend && node e2e/full-flow.mjs                       # real Chrome + real models, full interview (follow-ups, skip, reload, report)
 cd frontend && node e2e/mic.mjs                             # real Chrome MediaRecorder + local Whisper (needs ./setup-models.sh --stt)
 cd frontend && node e2e/voices-system.mjs                   # the no-Phonon path (Windows/Linux): questions spoken by the OS voices
@@ -509,7 +528,7 @@ time limits, v5→v6 migration, redaction across PDF/MD/JSON, backup, resume tra
 
 `.github/workflows/ci.yml` runs lint, docs checks, backend tests (macOS, Windows, Linux; Python 3.12, plus 3.10 on Linux) and frontend checks for every pull request and push to `main`; `.github/workflows/security.yml` runs dependency and CodeQL scans. Neither needs a model, a microphone or a cloud account.
 
-The e2e scripts start their own backend on port 3100 with a throw-away data directory — your interviews are never touched.
+The e2e scripts start their own backend on port 3100 (or `E2E_PORT`) with a throw-away data directory — your interviews are never touched. If the port is already in use they stop with a message instead of testing the server that holds it.
 
 ## 13. Project layout
 
@@ -517,13 +536,13 @@ The e2e scripts start their own backend on port 3100 with a throw-away data dire
 start|stop|check|setup-models  .sh (macOS/Linux) and .bat (Windows) wrappers
 scripts/manage.py        the one cross-platform launcher       .env.example  .gitignore  .gitattributes
 backend/app/  main.py config.py db.py schemas.py parsing.py errors.py deps.py
-              routers/   library · interviews · speech · system (health, voices, stats, usage) · ai (engine, key, budget) · resumes
+              routers/   library · interviews · speech · system (health, voices, stats, usage, backup) · ai (engine, key, budget) · resumes · setup (first-run checks, model download)
               services/  questions · interviews (state machine) · evaluator · prompts · reports · stats · ollama · tts · stt · cloud · gateway (local vs cloud routing, budget guard) · ai_config · pricing · usage · resumes · resume_extract · resume_profile · resume_questions
-                         · eval_profiles · grounding · adaptive (engine) · candidate_profile · tech_implications
-backend/tests/           unit + API tests, integration/ (real models)
-frontend/src/            App · api · audio · theme · palette · recorder · pages/{Home,Questions,Setup,Interview,History,Report,Settings} · components (CommandPalette, charts, …)
+                         · eval_profiles · grounding · adaptive (engine) · candidate_profile · tech_implications · report_pdf · setup_check · model_pull · sysmem
+backend/tests/           unit + API tests, integration/ (real models and the real Groq API; opt-in)
+frontend/src/            App · api · audio · theme · palette · recorder · pages/{Home,Questions,Resumes,ResumeDetail,Setup,Interview,History,Reports,Report,Usage,Settings} · components (CommandPalette, charts, …)
 frontend/e2e/            real-Chrome end-to-end scripts
-docs/                    evaluation · adaptive interviews · resume intelligence · adr/ (architecture decisions)
+docs/                    architecture · development · evaluation · adaptive interviews · resume intelligence · adr/ (architecture decisions) · maintainers/
 data/                    SQLite DB, resume PDFs (data/resumes), OCR temp files (data/tmp), audio cache, backups (git-ignored)
 ```
 
@@ -544,4 +563,4 @@ The security model (loopback-only server, untrusted-input handling, cloud opt-in
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE). Dependencies keep their own licences; the built app includes the Inter typeface (SIL Open Font License 1.1, from the `@fontsource-variable/inter` package).

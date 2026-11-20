@@ -14,7 +14,8 @@ import pytest
 
 from app.config import Settings
 from app.schemas import RubricSettings
-from app.services.evaluator import EvalContext, Evaluator, decide_followup
+from app.services import eval_profiles
+from app.services.evaluator import EvalContext, Evaluator, FollowUpDecision, decide_followup
 from app.services.ollama import LLMError, OllamaClient
 from app.services.tts import SpeechService
 
@@ -48,14 +49,24 @@ RUBRIC = "A rerun with the same input yields the same final state. Achieved via 
 def ctx(answer: str, followups_remaining: int = 1) -> EvalContext:
     return EvalContext(question=Q, rubric=RUBRIC, topic="ETL", difficulty="medium", interview_type="technical",
                        strictness="balanced", current_question=Q, current_kind="main", answer=answer,
-                       followups_remaining=followups_remaining)
+                       followups_remaining=followups_remaining,
+                       profile_key=eval_profiles.detect_category(topic="ETL", text=Q))
+
+
+def app_score(evaluator, raw, c: EvalContext, *, original: str | None = None) -> float:
+    """The score exactly as the app computes it for a stored answer (interviews._apply -> Evaluator.finalize): evidence
+    grounding, the evaluation profile's weights and the classification rules, not the legacy v1 weighted mean."""
+    interpreted = c.answer if original is not None and original != c.answer else None
+    final = evaluator.finalize(raw, RubricSettings(), FollowUpDecision(False), difficulty=c.difficulty, interpreted_answer=interpreted,
+                               answer=original if original is not None else c.answer, profile_key=c.profile_key, question=c.question)
+    return final.score
 
 
 def run(evaluator, answer, **kw):
     t0 = time.time()
-    raw = evaluator.evaluate(ctx(answer, **kw), RubricSettings())
-    from app.services.evaluator import compute_score, question_level
-    score = compute_score(raw.dimension_scores, raw.production_relevant, RubricSettings(), question_level(raw.question_level, "medium"))
+    c = ctx(answer, **kw)
+    raw = evaluator.evaluate(c, RubricSettings())
+    score = app_score(evaluator, raw, c)
     print(f"\n  [{time.time() - t0:5.1f}s] score={score} needs_followup={raw.needs_followup} :: {answer[:60]!r}")
     print(f"        missing={raw.missing_concepts} misconceptions={raw.misconceptions}\n        followup={raw.followup_question!r} reason={raw.followup_reason!r}")
     return raw, score
@@ -107,13 +118,12 @@ GARBLED = ("My SQL is known as MySQL, where it is known for its capabilities of 
 
 def grade_spoken(evaluator, answer):
     """The same two steps the app performs for a voice answer: repair the transcript, then grade it."""
-    from app.services.evaluator import compute_score, question_level
-
     fixed = evaluator.interpret_transcript(MYSQL_Q, answer)
     c = EvalContext(question=MYSQL_Q, rubric=None, topic=None, difficulty=None, interview_type="technical", strictness="balanced",
-                    current_question=MYSQL_Q, current_kind="main", answer=fixed, followups_remaining=2, answer_source="voice")
+                    current_question=MYSQL_Q, current_kind="main", answer=fixed, followups_remaining=2, answer_source="voice",
+                    profile_key=eval_profiles.detect_category(topic=None, text=MYSQL_Q))
     raw = evaluator.evaluate(c, RubricSettings())
-    score = compute_score(raw.dimension_scores, raw.production_relevant, RubricSettings(), question_level(raw.question_level, None))
+    score = app_score(evaluator, raw, c, original=answer)
     print(f"\n  score={score} level={raw.question_level}\n  graded as: {fixed!r}\n  missing={raw.missing_concepts} misconceptions={raw.misconceptions}")
     return fixed, raw, score
 

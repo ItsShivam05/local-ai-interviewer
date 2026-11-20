@@ -45,7 +45,7 @@ def test_it_contains_the_scorecard_every_score_and_the_final_score(client, set_i
     fake.chat_replies = [good_eval(correctness=9), good_eval(correctness=5)]
     st = finished(client, set_id, fake)
     text = pdf_text(fetch_pdf(client, st["id"]).content)
-    for needle in ("Interview Report", "Scorecard", "Final score", "Summary", "Detailed feedback", "Question number 1?", "Question number 2?", "Your answer", "Reference answer",
+    for needle in ("Interview Report", "Scorecard", "Final score", "Summary", "Detailed feedback", "Question number 1?", "Question number 2?", "Your answer", "Suggested answer (written by the AI)",
                    "Page 1 of", "How scores are calculated"):
         assert needle in text, needle
     rep = client.get(f"/api/interviews/{st['id']}/report").json()
@@ -118,3 +118,21 @@ def test_file_names_are_safe_for_any_title(client):
     r = {"interview": {"title": "Senior / Backend: \"SQL\" & caching?! नमस्ते", "completed_at": "2026-11-02T10:00:00+00:00", "created_at": "x"}}
     assert report_pdf.pdf_filename(r) == "interview-report-senior-backend-sql-caching-2026-11-02.pdf"
     assert report_pdf.pdf_filename({"interview": {"title": "नमस्ते", "completed_at": None, "created_at": "2026-01-05T00:00:00"}}) == "interview-report-interview-2026-01-05.pdf"
+
+
+def test_the_pdf_prints_proper_labels_for_every_dimension_never_raw_field_names(client, set_id, fake):
+    """Real case (18 Nov 2026): score lines read "conceptual_understanding 8 problem_solving 7 edge_cases 6"."""
+    import pypdfium2 as pdfium
+    from conftest import add_questions, answer, good_eval, start_interview
+    add_questions(client, set_id, 1)
+    ev = good_eval(correctness=8, production=True)
+    ev["dimension_scores"].update({"conceptual_understanding": 8, "problem_solving": 7, "edge_cases": 6, "tradeoffs": 5})
+    fake.chat_replies = [ev]
+    st = start_interview(client, set_id, max_followups=0, feedback_mode="at_end")
+    st = answer(client, st, "An answer").json()
+    doc = pdfium.PdfDocument(client.get(f"/api/interviews/{st['id']}/report/export?format=pdf").content)
+    text = " ".join(" ".join(doc[i].get_textpage().get_text_range() for i in range(len(doc))).split())       # the line may wrap
+    for raw in ("conceptual_understanding", "problem_solving", "edge_cases", "practical_application", "production_awareness", "tradeoffs"):
+        assert raw not in text, raw
+    for label in ("Concepts 8", "Problem-solving 7", "Edge cases 6", "Trade-offs 5", "Practical use 8", "Production 8"):
+        assert label in text, label

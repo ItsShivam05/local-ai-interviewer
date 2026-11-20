@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ApiError, resumesApi } from "../api";
+import { api, ApiError, resumesApi } from "../api";
 import Icon from "../components/Icon";
 import CandidateProfile from "../components/CandidateProfile";
 import ResumeEditor from "../components/ResumeEditor";
 import { CardsSkeleton } from "../components/Loaders";
 import { Confirm, fmtDate, useAsync, useToast } from "../components/ui";
 import { setNavGuard } from "../navGuard";
-import { awaitingConsent, changedSections, emptyProfile, isWorking, METHOD_HELP, methodLabel, normalise, sameProfile, stageText, statusChip, validateProfile } from "../resumeHelpers";
+import { awaitingConsent, changedSections, needsCloudPermission, emptyProfile, isWorking, METHOD_HELP, methodLabel, normalise, sameProfile, stageText, statusChip, validateProfile } from "../resumeHelpers";
 import type { Resume, ResumeProfile, ResumeText } from "../types";
 import { ConsentDialog, DELETE_NOTE, practice } from "./Resumes";
 import { usePoll } from "./usePoll";
@@ -63,6 +63,7 @@ export default function ResumeDetail({ id }: { id: number }) {
   const [renaming, setRenaming] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<null | "reparse" | "delete" | "revert" | { leave: string }>(null);
   const [consent, setConsent] = useState(false);
+  const ai = useAsync(() => api.ai(), []);
 
   const load = useCallback(async (quiet = false) => {
     try { const x = await resumesApi.get(id, quiet); setR(x); setError(null); return x; }
@@ -163,6 +164,11 @@ export default function ResumeDetail({ id }: { id: number }) {
       {awaitingConsent(r) && (
         <div className="notice info rz-banner" role="status"><Icon name="cloud" /> <span><b>Cloud mode is on.</b> The text was read on this computer; organising it sends the text to Groq’s servers.</span>
           <button className="btn primary" onClick={() => setConsent(true)}>Review and allow</button></div>
+      )}
+
+      {needsCloudPermission(r, ai.data?.mode) && (
+        <div className="notice info rz-banner" role="status" data-testid="allow-cloud"><Icon name="cloud" /> <span><b>Cloud mode is on.</b> This resume has not been allowed to leave this computer, so questions about it cannot be written or graded by Groq.</span>
+          <button className="btn" onClick={() => setConsent(true)}>Allow for cloud</button></div>
       )}
 
       <div className="tabs" role="tablist" aria-label="Resume views">

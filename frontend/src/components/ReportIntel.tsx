@@ -138,7 +138,7 @@ export default function ReportIntel({ r, part }: { r: Report; part: IntelPart })
           <h2 id="ri-trust-h" style={{ margin: 0 }}>How reliable the grading was</h2>
           <ul className="tight small" style={{ marginBottom: 0 }}>
             {ev && ev.quotes > 0 && <li>{ev.verified} of {ev.quotes} evidence quote{ev.quotes === 1 ? "" : "s"} were found in your answers.</li>}
-            {ev && ev.unverified_misconceptions > 0 && <li>{ev.unverified_misconceptions} possible error{ev.unverified_misconceptions === 1 ? "" : "s"} could not be found in your answers, so {ev.unverified_misconceptions === 1 ? "it was" : "they were"} not counted.</li>}
+            {ev && ev.unverified_misconceptions > 0 && <li>{ev.unverified_misconceptions} possible error{ev.unverified_misconceptions === 1 ? "" : "s"} could not be found in your answers, so {ev.unverified_misconceptions === 1 ? "it was" : "they were"} not counted as mistakes.</li>}
             {cons?.flags.map((f, i) => <li key={`f${i}`}>{f.message}</li>)}
             {cons?.adjustments.map((a, i) => <li key={`a${i}`}>Score adjustment: {a}</li>)}
           </ul>

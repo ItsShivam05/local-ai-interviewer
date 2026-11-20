@@ -20,7 +20,25 @@ def test_cross_site_post_rejected_but_local_origin_allowed(client, set_id):
     body = {"text": "A question?"}
     assert client.post(f"/api/sets/{set_id}/questions", json=body, headers={"origin": "https://evil.example"}).status_code == 403
     assert client.post(f"/api/sets/{set_id}/questions", json=body, headers={"origin": "http://localhost:3000"}).status_code == 201
-    assert client.post(f"/api/sets/{set_id}/questions", json=body, headers={"origin": "http://127.0.0.1:5173"}).status_code == 201
+    assert client.post(f"/api/sets/{set_id}/questions", json=body, headers={"origin": "http://127.0.0.1:3000"}).status_code == 201
+    # A page on ANOTHER localhost port is some other program, not this app (security audit, Nov 2026: it could end or pause an interview).
+    # The app's own dev mode is unaffected: Vite serves on the app's port and proxies with the Host header kept.
+    for other in ("http://127.0.0.1:5173", "http://localhost:8080", "http://localhost", "https://localhost:3000.evil.example", "http://user@localhost:3000"):
+        assert client.post(f"/api/sets/{set_id}/questions", json=body, headers={"origin": other}).status_code == 403, other
+    assert client.post("/api/llm/warm", headers={"origin": "http://localhost:8080", "content-type": "text/plain"}).status_code == 403
+
+
+def test_the_browsers_cross_site_verdict_is_honoured_and_responses_cannot_be_framed_by_others(client, set_id):
+    """A foreign page must not be able to trigger a download of the backup (it contains everything, including a saved API key)."""
+    for verdict in ("cross-site", "same-site"):
+        for path in ("/api/backup", "/api/health", f"/api/sets/{set_id}/export"):
+            assert client.get(path, headers={"sec-fetch-site": verdict}).status_code == 403, (verdict, path)
+    for verdict in ("same-origin", "none"):                         # the app's own requests, and the user opening the address
+        assert client.get("/api/health", headers={"sec-fetch-site": verdict}).status_code == 200
+    assert client.get("/api/health").status_code == 200             # scripts and curl send no such header
+    h = client.get("/api/health").headers
+    assert h["x-frame-options"] == "SAMEORIGIN" and "frame-ancestors 'self'" in h["content-security-policy"]
+    assert h["x-content-type-options"] == "nosniff" and h["cross-origin-resource-policy"] == "same-origin" and h["referrer-policy"] == "no-referrer"
 
 
 def test_no_cors_headers_are_ever_sent(client):

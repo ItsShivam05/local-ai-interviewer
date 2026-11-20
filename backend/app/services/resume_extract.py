@@ -81,6 +81,45 @@ def open_pdf(data: bytes):
         raise PdfError("resume_unreadable", "This PDF looks damaged and could not be opened. Export it again from your editor and upload the new file.") from e
 
 
+# A resume PDF is small inside as well as outside. A crafted file can be a few hundred KB yet expand to gigabytes when its
+# compressed streams are inflated ("decompression bomb"): PDFium would do that in memory. The size is therefore measured first,
+# by inflating every stream in small pieces and counting, never keeping the output.
+# The limits leave room for a real scanned resume: one A4 page scanned in colour at 600 DPI is about 104 MB uncompressed.
+MAX_STREAM_INFLATED = 160 * 1024 * 1024      # one stream (a page's content, an image)
+MAX_TOTAL_INFLATED = 768 * 1024 * 1024       # the whole file
+_STREAM_START = re.compile(rb"stream\r?\n")
+
+
+def _inflated_size(blob: bytes, limit: int) -> int:
+    """How many bytes a zlib (Flate) stream expands to, counted up to just past `limit`. 0 when it is not a zlib stream."""
+    d = zlib.decompressobj()
+    total, buf = 0, blob
+    try:
+        while buf and not d.eof:
+            out = d.decompress(buf, 1 << 20)                 # at most 1 MiB of output per step, then thrown away
+            total += len(out)
+            if total > limit:
+                break
+            buf = d.unconsumed_tail
+            if not out and not buf:
+                break
+    except zlib.error:
+        pass
+    return total
+
+
+def check_inflation(data: bytes) -> None:
+    """Refuse a PDF whose compressed streams expand far beyond what any resume needs. Raises PdfError("pdf_expands_too_much")."""
+    total = 0
+    for m in _STREAM_START.finditer(data):
+        end = data.find(b"endstream", m.end())
+        size = _inflated_size(data[m.end(): end if end != -1 else len(data)], MAX_STREAM_INFLATED)
+        total += size
+        if size > MAX_STREAM_INFLATED or total > MAX_TOTAL_INFLATED:
+            raise PdfError("pdf_expands_too_much", "This PDF expands to an unusually large size when opened, which a resume never needs, so it was "
+                                                   "not read. Export your resume again as a normal PDF (or print it to PDF) and upload that.")
+
+
 def count_pages(data: bytes) -> int:
     doc = open_pdf(data)
     try:

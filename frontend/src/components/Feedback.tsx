@@ -67,7 +67,13 @@ function HowGraded({ ev }: { ev: Evaluation }) {
 }
 
 /** Evaluation / Ideal Answer / Follow-up tabs (storyboard screen 6). */
-export default function Feedback({ ev, score, followup }: { ev: Evaluation; score: number; followup?: { question: string; reason: string | null } | null }) {
+/** `resume`: the question is about the candidate's own resume. The grader cannot know the facts of that work, so its "reference answer"
+ *  is an outline of a strong answer, and any figure in it that nobody mentioned is called out (the backend checks this). */
+export default function Feedback({ ev, score, followup, resume = false, hasRubric }: {
+  ev: Evaluation; score: number; followup?: { question: string; reason: string | null } | null; resume?: boolean;
+  hasRubric?: boolean;            // false: no expected answer was supplied, so the suggested answer is the model's own and unchecked
+}) {
+  const unverifiedFigures = (ev.consistency_flags ?? []).find((f) => f.code === "reference_figures_unverified")?.message;
   const [tab, setTab] = useState<Tab>("evaluation");
   const dims = shownDimensions(ev);
   const note = followup?.reason || ev.followup_reason;
@@ -104,7 +110,7 @@ export default function Feedback({ ev, score, followup }: { ev: Evaluation; scor
           <Group title="Incorrect or shaky statements" items={ev.misconceptions} tone="bad" />
           {(ev.unverified_misconceptions ?? []).length > 0 && (
             <div data-testid="fb-unverified">
-              <h3>Possible errors (not found in your answer, not counted)</h3>
+              <h3>Possible errors (not found in your answer, not counted as mistakes)</h3>
               <ul className="glist neutral">{ev.unverified_misconceptions!.map((x, i) => <li key={i}><span className="gi"><Icon name="alert" /></span><span>{x}</span></li>)}</ul>
             </div>
           )}
@@ -122,7 +128,13 @@ export default function Feedback({ ev, score, followup }: { ev: Evaluation; scor
       )}
       {tab === "ideal" && (
         <div className="stack" style={{ marginTop: 14 }}>
-          <div><h3>Reference answer</h3><p style={{ whiteSpace: "pre-wrap" }}>{ev.ideal_answer || "No reference answer was produced."}</p></div>
+          <div><h3>{resume ? "What a strong answer covers" : "Suggested answer (written by the AI)"}</h3>
+            {!resume && hasRubric === false && ev.ideal_answer && (
+              <p className="notice warn small" data-testid="fb-unchecked-answer" style={{ margin: "0 0 6px" }}>Not checked: this question has no expected answer, so the
+                grading model wrote this itself and it can be wrong. Add an expected answer to the question to grade against your own.</p>
+            )}
+            <p style={{ whiteSpace: "pre-wrap" }}>{ev.ideal_answer || "No suggested answer was produced."}</p>
+            {unverifiedFigures && <p className="muted small" data-testid="fb-unverified-figures" style={{ marginTop: 6 }}>{unverifiedFigures}</p>}</div>
           <Group title="How to improve" items={ev.suggested_improvements} />
           {ev.deeper_question && <div data-testid="fb-deeper"><h3>A harder question to try</h3><p style={{ margin: 0 }}>{ev.deeper_question}</p></div>}
         </div>

@@ -1,0 +1,341 @@
+{
+ "awaiting": {
+  "mode": "fixed",
+  "adaptive": null,
+  "end_reason": null,
+  "time": {
+   "limit_s": null,
+   "remaining_s": null
+  },
+  "id": 1,
+  "title": "Fixture interview",
+  "interview_type": "technical",
+  "status": "in_progress",
+  "phase": "awaiting_answer",
+  "error": null,
+  "config": {
+   "title": "Fixture interview",
+   "interview_type": "technical",
+   "question_ids": null,
+   "order": "supplied",
+   "max_followups": 0,
+   "voice": "Harper",
+   "speech_speed": 1.0,
+   "strictness": "balanced",
+   "feedback_mode": "at_end",
+   "question_audio": "manual",
+   "mic_enabled": false,
+   "include_bank": true,
+   "mix": "bank_first",
+   "mode": "fixed",
+   "strategy": "progressive",
+   "start_level": "intermediate",
+   "max_questions": 8,
+   "time_limit_minutes": null,
+   "focus_topic": null
+  },
+  "current_turn_id": 1,
+  "progress": {
+   "total": 2,
+   "finished": 0,
+   "planned": false,
+   "answered": 0,
+   "skipped": 0,
+   "unanswered": 0,
+   "position": 1
+  },
+  "items": [
+   {
+    "id": 1,
+    "position": 0,
+    "text": "Question number 1?",
+    "topic": "SQL",
+    "difficulty": null,
+    "status": "active",
+    "followup_count": 0,
+    "source": "bank",
+    "resume_name": null,
+    "score": null
+   },
+   {
+    "id": 2,
+    "position": 1,
+    "text": "Question number 2?",
+    "topic": "Spark",
+    "difficulty": null,
+    "status": "pending",
+    "followup_count": 0,
+    "source": "bank",
+    "resume_name": null,
+    "score": null
+   }
+  ],
+  "current": {
+   "pending_followup": null,
+   "item": {
+    "id": 1,
+    "position": 0,
+    "text": "Question number 1?",
+    "topic": "SQL",
+    "difficulty": null,
+    "followup_count": 0,
+    "followups_max": 0,
+    "followups_remaining": 0,
+    "source": "bank",
+    "resume_name": null
+   },
+   "turn": {
+    "id": 1,
+    "seq": 0,
+    "kind": "main",
+    "question_text": "Question number 1?",
+    "status": "asked",
+    "answer_text": null,
+    "answer_source": null,
+    "followup_reason": null,
+    "eval_attempts": 0
+   },
+   "thread": [
+    {
+     "id": 1,
+     "seq": 0,
+     "kind": "main",
+     "question_text": "Question number 1?",
+     "status": "asked",
+     "answer_text": null,
+     "answer_source": null,
+     "followup_reason": null,
+     "eval_attempts": 0
+    }
+   ]
+  },
+  "next_action": null,
+  "has_report": false
+ },
+ "failed": {
+  "mode": "fixed",
+  "adaptive": null,
+  "end_reason": null,
+  "time": {
+   "limit_s": null,
+   "remaining_s": null
+  },
+  "id": 1,
+  "title": "Fixture interview",
+  "interview_type": "technical",
+  "status": "in_progress",
+  "phase": "evaluation_failed",
+  "error": "Ollama returned HTTP 500: model crashed",
+  "config": {
+   "title": "Fixture interview",
+   "interview_type": "technical",
+   "question_ids": null,
+   "order": "supplied",
+   "max_followups": 0,
+   "voice": "Harper",
+   "speech_speed": 1.0,
+   "strictness": "balanced",
+   "feedback_mode": "at_end",
+   "question_audio": "manual",
+   "mic_enabled": false,
+   "include_bank": true,
+   "mix": "bank_first",
+   "mode": "fixed",
+   "strategy": "progressive",
+   "start_level": "intermediate",
+   "max_questions": 8,
+   "time_limit_minutes": null,
+   "focus_topic": null
+  },
+  "current_turn_id": 1,
+  "progress": {
+   "total": 2,
+   "finished": 0,
+   "planned": false,
+   "answered": 0,
+   "skipped": 0,
+   "unanswered": 0,
+   "position": 1
+  },
+  "items": [
+   {
+    "id": 1,
+    "position": 0,
+    "text": "Question number 1?",
+    "topic": "SQL",
+    "difficulty": null,
+    "status": "active",
+    "followup_count": 0,
+    "source": "bank",
+    "resume_name": null,
+    "score": null
+   },
+   {
+    "id": 2,
+    "position": 1,
+    "text": "Question number 2?",
+    "topic": "Spark",
+    "difficulty": null,
+    "status": "pending",
+    "followup_count": 0,
+    "source": "bank",
+    "resume_name": null,
+    "score": null
+   }
+  ],
+  "current": {
+   "pending_followup": null,
+   "item": {
+    "id": 1,
+    "position": 0,
+    "text": "Question number 1?",
+    "topic": "SQL",
+    "difficulty": null,
+    "followup_count": 0,
+    "followups_max": 0,
+    "followups_remaining": 0,
+    "source": "bank",
+    "resume_name": null
+   },
+   "turn": {
+    "id": 1,
+    "seq": 0,
+    "kind": "main",
+    "question_text": "Question number 1?",
+    "status": "submitted",
+    "answer_text": "Reruns give the same final state.",
+    "answer_source": "typed",
+    "followup_reason": null,
+    "eval_attempts": 1
+   },
+   "thread": [
+    {
+     "id": 1,
+     "seq": 0,
+     "kind": "main",
+     "question_text": "Question number 1?",
+     "status": "submitted",
+     "answer_text": "Reruns give the same final state.",
+     "answer_source": "typed",
+     "followup_reason": null,
+     "eval_attempts": 1
+    }
+   ]
+  },
+  "next_action": null,
+  "has_report": false
+ },
+ "next": {
+  "mode": "fixed",
+  "adaptive": null,
+  "end_reason": null,
+  "time": {
+   "limit_s": null,
+   "remaining_s": null
+  },
+  "id": 1,
+  "title": "Fixture interview",
+  "interview_type": "technical",
+  "status": "in_progress",
+  "phase": "awaiting_answer",
+  "error": null,
+  "config": {
+   "title": "Fixture interview",
+   "interview_type": "technical",
+   "question_ids": null,
+   "order": "supplied",
+   "max_followups": 0,
+   "voice": "Harper",
+   "speech_speed": 1.0,
+   "strictness": "balanced",
+   "feedback_mode": "at_end",
+   "question_audio": "manual",
+   "mic_enabled": false,
+   "include_bank": true,
+   "mix": "bank_first",
+   "mode": "fixed",
+   "strategy": "progressive",
+   "start_level": "intermediate",
+   "max_questions": 8,
+   "time_limit_minutes": null,
+   "focus_topic": null
+  },
+  "current_turn_id": 2,
+  "progress": {
+   "total": 2,
+   "finished": 1,
+   "planned": false,
+   "answered": 1,
+   "skipped": 0,
+   "unanswered": 0,
+   "position": 2
+  },
+  "items": [
+   {
+    "id": 1,
+    "position": 0,
+    "text": "Question number 1?",
+    "topic": "SQL",
+    "difficulty": null,
+    "status": "answered",
+    "followup_count": 0,
+    "source": "bank",
+    "resume_name": null,
+    "score": null
+   },
+   {
+    "id": 2,
+    "position": 1,
+    "text": "Question number 2?",
+    "topic": "Spark",
+    "difficulty": null,
+    "status": "active",
+    "followup_count": 0,
+    "source": "bank",
+    "resume_name": null,
+    "score": null
+   }
+  ],
+  "current": {
+   "pending_followup": null,
+   "item": {
+    "id": 2,
+    "position": 1,
+    "text": "Question number 2?",
+    "topic": "Spark",
+    "difficulty": null,
+    "followup_count": 0,
+    "followups_max": 0,
+    "followups_remaining": 0,
+    "source": "bank",
+    "resume_name": null
+   },
+   "turn": {
+    "id": 2,
+    "seq": 0,
+    "kind": "main",
+    "question_text": "Question number 2?",
+    "status": "asked",
+    "answer_text": null,
+    "answer_source": null,
+    "followup_reason": null,
+    "eval_attempts": 0
+   },
+   "thread": [
+    {
+     "id": 2,
+     "seq": 0,
+     "kind": "main",
+     "question_text": "Question number 2?",
+     "status": "asked",
+     "answer_text": null,
+     "answer_source": null,
+     "followup_reason": null,
+     "eval_attempts": 0
+    }
+   ]
+  },
+  "next_action": null,
+  "has_report": false
+ }
+}

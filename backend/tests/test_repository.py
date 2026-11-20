@@ -4,6 +4,8 @@ import json
 import re
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -115,3 +117,25 @@ def test_tool_versions_are_pinned_once_and_agree():
     assert hook and hook.group(1) == ruff
     workflows = "".join(p.read_text(encoding="utf-8") for p in (ROOT / ".github" / "workflows").glob("*.yml"))
     assert not re.search(r"(ruff|pip-audit)==\d", workflows), "pin tool versions in requirements-dev.txt, not in workflows"
+
+
+def _names(req_file: Path) -> set[str]:
+    out = set()
+    for line in req_file.read_text(encoding="utf-8").splitlines():
+        line = line.split("#")[0].strip()
+        if line and not line.startswith("-"):
+            out.add(re.split(r"[<>=!~;\[ ]", line, maxsplit=1)[0].lower().replace("_", "-"))
+    return out
+
+
+@pytest.mark.parametrize("source,lock", [("requirements.txt", "requirements.lock"), ("requirements-dev.txt", "requirements-dev.lock")])
+def test_each_lock_covers_its_requirements_and_hashes_every_pin(source, lock):
+    """The .lock files are generated from the .txt files (command in their header). After editing a .txt file, regenerate its lock."""
+    backend = ROOT / "backend"
+    text = (backend / lock).read_text(encoding="utf-8")
+    pinned = {m.group(1).lower() for m in re.finditer(r"^([A-Za-z0-9._-]+)==", text, re.M)}
+    wanted = _names(backend / source) | (_names(backend / "requirements.txt") if source == "requirements-dev.txt" else set())
+    assert wanted <= pinned, f"{lock} is missing {sorted(wanted - pinned)}: regenerate it (see its header)"
+    for block in re.split(r"\n(?=[A-Za-z0-9])", text.split("\n", 3)[-1]):
+        if "==" in block:
+            assert "--hash=sha256:" in block, f"no hash for {block.splitlines()[0]}"

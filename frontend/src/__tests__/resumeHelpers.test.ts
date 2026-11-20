@@ -158,3 +158,15 @@ describe("palette entries for resumes", () => {
     expect(intents).toEqual([{ type: "resume-upload" }]);
   });
 });
+
+describe("needsCloudPermission", () => {
+  it("is true only for a finished resume without permission while cloud mode is on", async () => {
+    const { needsCloudPermission } = await import("../resumeHelpers");
+    expect(needsCloudPermission({ status: "ready", consent_cloud: null }, "cloud")).toBe(true);
+    expect(needsCloudPermission({ status: "ready", consent_cloud: 0 }, "cloud")).toBe(true);
+    expect(needsCloudPermission({ status: "ready", consent_cloud: 1 }, "cloud")).toBe(false);
+    expect(needsCloudPermission({ status: "ready", consent_cloud: null }, "local")).toBe(false);
+    expect(needsCloudPermission({ status: "ready", consent_cloud: null }, undefined)).toBe(false);
+    expect(needsCloudPermission({ status: "uploaded", consent_cloud: null }, "cloud")).toBe(false);
+  });
+});

@@ -90,15 +90,7 @@ def too_similar(candidate: str, previous: list[str], threshold: float = 0.7) -> 
     return False
 
 
-_NON_ATTEMPT = re.compile(
-    r"\b(i\s*)?(do\s*n[o']?t|don't|dont|cannot|can't|cant)\s+(really\s+)?(know|remember|recall|say)\b|\bno\s+(idea|clue)\b|"
-    r"\bnot\s+(sure|certain)\b|\bi\s+have\s+no\s+(idea|experience)\b|^\s*(pass|skip|nothing|idk)\W*$", re.I)
-
-
-def is_non_attempt(answer: str) -> bool:
-    """A short 'I don't know'-style reply: there is nothing to build a follow-up on."""
-    text = (answer or "").strip()
-    return len(text.split()) <= 12 and bool(_NON_ATTEMPT.search(text))
+is_non_attempt, is_pure_non_attempt = grounding.is_non_attempt, grounding.is_pure_non_attempt     # the rules live with the grounding code
 
 
 @dataclass
@@ -110,8 +102,10 @@ class FollowUpDecision:
 
 
 def decide_followup(ev: LLMEvaluation, *, max_followups: int, used_followups: int,
-                    previous_questions: list[str], answer: str = "") -> FollowUpDecision:
-    """Application-side policy. The prompt asks nicely; this function is what actually enforces limits."""
+                    previous_questions: list[str], answer: str = "", non_attempt: Optional[bool] = None) -> FollowUpDecision:
+    """Application-side policy. The prompt asks nicely; this function is what actually enforces limits.
+
+    `non_attempt`: the grounded verdict (classification "no_attempt") when the caller has it; otherwise the answer's wording decides."""
     if not ev.needs_followup or not ev.followup_question.strip():
         return FollowUpDecision(False, reason=ev.followup_reason)
     if max_followups <= 0:
@@ -119,7 +113,7 @@ def decide_followup(ev: LLMEvaluation, *, max_followups: int, used_followups: in
     if used_followups >= max_followups:
         return FollowUpDecision(False, reason=ev.followup_reason,
                                 suppressed_reason=f"Follow-up limit reached ({used_followups}/{max_followups}).")
-    if is_non_attempt(answer):
+    if non_attempt if non_attempt is not None else is_non_attempt(answer):
         return FollowUpDecision(False, reason="No substantive attempt to build on, so further probing would not be useful.",
                                 suppressed_reason="The answer was not a real attempt (e.g. \"I don't know\").")
     q = ev.followup_question.strip()
@@ -258,9 +252,9 @@ class Evaluator:
     def finalize(self, raw: LLMEvaluation, rubric: RubricSettings, decision: FollowUpDecision,
                  difficulty: Optional[str] = None, interpreted_answer: Optional[str] = None, *,
                  answer: Optional[str] = None, profile_key: str = "general", input_hash: Optional[str] = None,
-                 followup_kind: Optional[str] = None) -> Evaluation:
+                 followup_kind: Optional[str] = None, resume_sources: Optional[list[str]] = None, question: Optional[str] = None) -> Evaluation:
         """Validated model analysis -> grounded, deterministically scored evaluation. The model never supplies the total."""
-        g = self.assess(raw, answer=answer, interpreted_answer=interpreted_answer)
+        g = self.assess(raw, answer=answer, interpreted_answer=interpreted_answer, question=question)
         level = question_level(raw.question_level, difficulty)
         profile = eval_profiles.get_profile(profile_key)
         result = eval_profiles.score_answer(g.dimension_scores, profile, rubric, level, raw.production_relevant)
@@ -275,6 +269,12 @@ class Evaluator:
         data["needs_followup"] = decision.ask
         data["followup_reason"] = decision.reason or raw.followup_reason
         flags = list(g.flags)
+        if resume_sources is not None and raw.ideal_answer:
+            # A resume question: the grader cannot know the candidate's project, so figures nobody mentioned are inventions.
+            invented = grounding.unsupported_figures(raw.ideal_answer, [*resume_sources, answer or "", interpreted_answer or ""])
+            if invented:
+                flags.append({"code": "reference_figures_unverified", "message": "The suggested answer mentions figures that are not in your answer or "
+                              "your resume (" + ", ".join(invented[:5]) + "). They are illustrations, not facts about your work."})
         if result.missing_dimensions:
             flags.append({"code": "dimension_not_scored", "message": "Not scored by the grader and left out of the weighting: " + ", ".join(result.missing_dimensions) + "."})
         provenance = {"prompt_version": PROMPT_VERSION, "profiles_version": eval_profiles.PROFILES_VERSION,
@@ -288,7 +288,8 @@ class Evaluator:
                           provenance=provenance)
 
     @staticmethod
-    def assess(raw: LLMEvaluation, *, answer: Optional[str], interpreted_answer: Optional[str] = None) -> grounding.Grounding:
+    def assess(raw: LLMEvaluation, *, answer: Optional[str], interpreted_answer: Optional[str] = None,
+               question: Optional[str] = None) -> grounding.Grounding:
         """Grounding + consistency checks. Without the answer text (legacy callers) the model's analysis is taken as given."""
         if answer is None:
             return grounding.Grounding(evidence=list(raw.evidence), grounded_misconceptions=list(raw.misconceptions), unverified_misconceptions=[],
@@ -296,7 +297,7 @@ class Evaluator:
                                        classification=grounding.classify(dims=raw.dimension_scores, grounded_misconceptions=raw.misconceptions,
                                                                          correct_points=raw.correct_points, confidence=raw.confidence, non_attempt=False))
         answers = [a for a in (answer, interpreted_answer) if a]
-        return grounding.ground(raw, answers=answers, non_attempt=is_non_attempt(answer))
+        return grounding.ground(raw, answers=answers, non_attempt=is_non_attempt(answer), question=question)
 
     def narrative(self, digest: str) -> Narrative:
         messages = [{"role": "system", "content": NARRATIVE_SYSTEM},

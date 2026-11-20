@@ -39,10 +39,11 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: backend/requirements*.txt
+          cache-dependency-path: backend/requirements*
       - name: Install pip-audit (the version range in backend/requirements-dev.txt)
         run: python -m pip install "$(grep -E '^pip-audit' backend/requirements-dev.txt | cut -d'#' -f1 | xargs)"
-      - run: python -m pip_audit -r backend/requirements.txt --strict
+      - run: python -m pip_audit -r backend/requirements.lock --require-hashes --strict   # exactly what the launcher installs
+      - run: python -m pip_audit -r backend/requirements-dev.lock --require-hashes --strict   # test and lint tools (CI and contributors)
 
   npm-audit:
     name: Frontend dependencies (npm audit)

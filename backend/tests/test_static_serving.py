@@ -39,3 +39,12 @@ def test_speech_routes_are_never_compressed(settings, fake, tmp_path):
     c = make_app_client(settings, fake, tmp_path)
     r = c.get("/api/speech/stt", headers={"Accept-Encoding": "gzip"})
     assert r.status_code == 200 and r.headers.get("content-encoding") is None
+
+
+def test_head_requests_to_the_ui_are_answered_without_a_body(settings, fake, tmp_path):
+    """Review round 1: `curl -I http://localhost:3000/` (and uptime checks) got 405 Method Not Allowed."""
+    c = make_app_client(settings, fake, tmp_path)
+    for path in ("/", "/assets/index-abc123.js"):
+        get, head = c.get(path), c.head(path)
+        assert head.status_code == get.status_code == 200 and head.content == b""
+        assert head.headers["cache-control"] == get.headers["cache-control"]

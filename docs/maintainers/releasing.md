@@ -101,7 +101,7 @@ changelog needs a `## [X.Y.Z-rc.1]` section. The final release is then a normal 
 See the full list in [CHANGELOG.md](https://github.com/Yuvakunaal/local-ai-interviewer/blob/main/CHANGELOG.md).
 
 ## Known limitations
-- Windows and Linux are covered by CI but not verified on real machines; cloud mode is verified against a fake server only.
+- Windows and Linux are covered by CI but not verified on real machines; cloud mode has had one real interview by hand and is otherwise tested against a fake server.
   (Edit to match README section 11 at the time.)
 ```
 

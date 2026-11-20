@@ -27,7 +27,8 @@ flowchart LR
 ## Layers
 
 **Routers** (`backend/app/routers/`) validate input (Pydantic models in `schemas.py`), call a service and shape the response. They
-hold no business rules. Groups: `library` (question sets, questions, import/export, rubric), `interviews`, `resumes`, `speech`, `ai`
+hold almost no business rules; the exceptions are small and local to one endpoint: the connection-test cooldown and model matching in
+`ai.py`, and the database backup in `system.py`. Groups: `library` (question sets, questions, import/export, rubric), `interviews`, `resumes`, `speech`, `ai`
 (engine, API key, budget), `setup` (first-run checks, model download) and `system` (health, voices, stats, usage, evaluation
 profiles, backup).
 
@@ -91,8 +92,9 @@ code path. See [adaptive-interviews.md](adaptive-interviews.md).
   budget checked before each call.
 - Every reply's tokens, timings and (cloud) estimated cost are recorded locally by `services/usage.py` (the Model usage page).
 
-Cloud mode has been verified against a fake Groq server only (see README section 11); `backend/tests/integration/test_real_groq.py`
-checks the real API when `GROQ_API_KEY` is set.
+Cloud mode has had one full interview run by hand against the real Groq service (18 Nov 2026) and is otherwise tested against a fake
+Groq server (see README section 11); the tests in `backend/tests/integration/` check the real API when `GROQ_API_KEY` is set and
+`-m integration` is given.
 
 ## Resume pipeline
 

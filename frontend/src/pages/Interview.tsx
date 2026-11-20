@@ -113,7 +113,10 @@ export default function Interview({ id }: { id: number }) {
     catch (e) {
       const err = e as ApiError;
       setError(err.message);
-      if (err.status === 409) await refresh();         // page was stale: reload the truth from the server
+      if (err.status === 409) {                        // page was stale: reload the truth from the server, and keep saying why
+        await refresh();                               // (refresh clears errors; without this the page silently jumped to another question)
+        setError(err.message);
+      }
     } finally { busyRef.current = false; setBusy(false); }
   };
 
@@ -298,8 +301,8 @@ export default function Interview({ id }: { id: number }) {
 
       {st.phase === "feedback" && !paused && !finished && (
         <>
-          {prior.length > 0 && <details className="card"><summary style={{ cursor: "pointer", fontWeight: 600 }}>Earlier on this question ({prior.length})</summary>{prior.map((t) => <PriorTurn key={t.id} t={t} />)}</details>}
-          {shown.map((t, i) => <FeedbackTurn key={t.id} t={t} followup={i === shown.length - 1 ? cur?.pending_followup ?? null : null} />)}
+          {prior.length > 0 && <details className="card"><summary style={{ cursor: "pointer", fontWeight: 600 }}>Earlier on this question ({prior.length})</summary>{prior.map((t) => <PriorTurn key={t.id} t={t} resume={cur?.item.source === "resume"} />)}</details>}
+          {shown.map((t, i) => <FeedbackTurn key={t.id} t={t} resume={cur?.item.source === "resume"} followup={i === shown.length - 1 ? cur?.pending_followup ?? null : null} />)}
           {cur?.pending_followup && (
             <div className="followup-box">
               <div className="hd"><i><Icon name="msg" size={14} /></i>Follow-up Question{pendingKind && <span className="badge" style={{ marginLeft: 8 }}>{pendingKind}</span>}</div>
@@ -367,18 +370,18 @@ function ProgressList({ st, pct }: { st: InterviewState; pct: number }) {
   );
 }
 
-function PriorTurn({ t }: { t: Turn }) {
+function PriorTurn({ t, resume }: { t: Turn; resume?: boolean }) {
   return (
     <div style={{ marginTop: 12 }}>
       <div className="small muted">{t.kind === "main" ? "Question" : "Follow-up"}</div>
       <div style={{ whiteSpace: "pre-wrap", fontWeight: 600 }}>{t.question_text}</div>
       {t.answer_text && <div className="bubble-a small" style={{ marginTop: 6 }}>{t.answer_text}</div>}
-      {t.evaluation && <div style={{ marginTop: 8 }}><Feedback ev={t.evaluation} score={t.score ?? t.evaluation.score} /></div>}
+      {t.evaluation && <div style={{ marginTop: 8 }}><Feedback ev={t.evaluation} score={t.score ?? t.evaluation.score} resume={resume} /></div>}
     </div>
   );
 }
 
-function FeedbackTurn({ t, followup }: { t: Turn; followup: { question: string; reason: string | null } | null }) {
+function FeedbackTurn({ t, followup, resume }: { t: Turn; followup: { question: string; reason: string | null } | null; resume?: boolean }) {
   return (
     <div className="card">
       <details style={{ marginBottom: 12 }}>
@@ -386,7 +389,7 @@ function FeedbackTurn({ t, followup }: { t: Turn; followup: { question: string; 
         <div style={{ whiteSpace: "pre-wrap", fontWeight: 600, marginTop: 8 }}>{t.question_text}</div>
         <div className="bubble-a small" style={{ marginTop: 8 }}>{t.answer_text}</div>
       </details>
-      {t.evaluation && <Feedback ev={t.evaluation} score={t.score ?? t.evaluation.score} followup={followup} />}
+      {t.evaluation && <Feedback ev={t.evaluation} score={t.score ?? t.evaluation.score} followup={followup} resume={resume} />}
     </div>
   );
 }

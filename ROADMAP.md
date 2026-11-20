@@ -12,11 +12,13 @@ and state transitions.
 - **Run on real Windows and Linux machines.** CI exercises the backend, frontend and launcher on all three systems, but the `.bat`
   wrappers, process start/stop on Windows and the Linux voice setup have not been run on real hardware. Reports of what works and
   what does not are valuable. **[contributors welcome]**
-- **Measure grading quality of the 2.0 pipeline with the real `qwen3.5:4b` model.** The evidence and profile prompt was verified with
-  a mocked model only. The plan is a small, labelled answer set (strong, partial, wrong, "I don't know", prompt-injection attempts)
-  and a script that reports how the scores rank. **[contributors welcome]**
-- **Test cloud mode against the real Groq API.** It has so far been verified against a fake server only (streaming usage, rate-limit
-  handling, reasoning settings). `backend/tests/integration/test_real_groq.py` runs when `GROQ_API_KEY` is set. **[contributors welcome]**
+- **Grade the grader independently.** A first benchmark exists (`backend/benchmarks/grading/`, results in
+  [evaluation §8](docs/evaluation.md#8-measured-grading-quality-benchmark)): 70/70 pairs ranked as labelled, one subtle error missed.
+  Its labels are the project's own. Still needed: answers labelled by people who did not write the prompt, a held-out set for any
+  prompt change, voice answers, resume questions and other machines. **[contributors welcome]**
+- **Test cloud mode more against the real Groq API.** One full interview was run by hand on 18 Nov 2026; the rate-limit wait, the
+  fallback model and voice answers have only met a fake server. The tests in `backend/tests/integration/` run when `GROQ_API_KEY` is
+  set and `-m integration` is given. **[contributors welcome]**
 - **Try the microphone feature with a physical microphone** and different accents and Whisper sizes.
 
 ## Quality and maintainability

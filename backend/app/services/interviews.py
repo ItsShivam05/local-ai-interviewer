@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 import random
 import sqlite3
 from concurrent.futures import Executor, ThreadPoolExecutor
@@ -28,9 +29,11 @@ from ..parsing import normalize_for_dedupe
 from ..schemas import (MAX_ANSWER_CHARS, MAX_INTERVIEW_QUESTIONS, MAX_POOL_QUESTIONS, AnswerIn, ClaimIn, InterviewConfig, LLMEvaluation,
                        ResumeAutoIn, ResumeQuestionIn)
 from . import adaptive, eval_profiles, reports
-from .evaluator import EvalContext, Evaluator, FollowUpDecision, decide_followup, is_non_attempt, question_level, too_similar
+from .evaluator import (EvalContext, Evaluator, FollowUpDecision, decide_followup, is_non_attempt, is_pure_non_attempt, question_level,
+                        too_similar)
 from .ollama import LLMError
 from .questions import QuestionService
+from .gateway import resume_content
 from .usage import usage_context
 
 log = logging.getLogger("interviewer.interviews")
@@ -116,6 +119,14 @@ class InterviewService:
             raise bad_request("too_many_questions", f"An interview can have at most {limit} questions (you chose {len(items)}).")
         if adaptive_mode and config.strategy == "resume" and not any(it["source"] == "resume" for it in items):
             raise bad_request("no_resume_questions", "A resume-based interview needs questions from a resume. Pick a resume or another strategy.")
+        resume_ids = tuple(dict.fromkeys(it["resume_id"] for it in items if it["source"] == "resume"))
+        if resume_ids and self.evaluator.writes_followups_separately():          # cloud mode: say so now, not at the first answer
+            ai = getattr(self.evaluator.ollama, "ai", None)
+            missing = ai.resumes_without_cloud_consent(resume_ids) if ai is not None else []
+            if missing:
+                raise conflict("cloud_consent_required", "Cloud mode is on: allow sending " + ", ".join(f"“{n}”" for n in missing) +
+                               " to Groq first (open the resume and press “Allow for cloud”), or switch to the local model.",
+                               resume_ids=[i for i in resume_ids if i is not None])
         plan = self._plan(config, items)
         now = utcnow()
         with self.db.tx() as c:
@@ -304,6 +315,7 @@ class InterviewService:
             c.execute("""UPDATE turns SET status='submitted', answer_text=?, answer_source=?, submitted_at=?,
                          eval_attempts=1 WHERE id=?""", (body.text, body.source, now, body.turn_id))
             c.execute("UPDATE interviews SET phase='evaluating', error=NULL, updated_at=? WHERE id=?", (now, iid))
+        log.info("interview %s: answer to turn %s saved (%d characters, %s)", iid, body.turn_id, len(body.text), body.source)   # never the text
         self.executor.submit(self._evaluate, iid, body.turn_id)
         return self.get_state(iid)
 
@@ -522,15 +534,21 @@ class InterviewService:
             has_answer = c.execute("SELECT 1 FROM turns WHERE item_id=? AND status IN ('submitted','evaluated')", (it["id"],)).fetchone()
             c.execute("UPDATE interview_items SET status=? WHERE id=?", ("answered" if has_answer else "unanswered", it["id"]))
         now = utcnow()
+        cur = self._row(c, iid)
+        if cur["paused_at"]:          # paused while the last answer was graded: close the pause so its time is not interview time
+            c.execute("UPDATE interviews SET paused_seconds=paused_seconds+?, paused_at=NULL WHERE id=?",
+                      (_seconds_between(cur["paused_at"], now), iid))
         c.execute("""UPDATE interviews SET status=?, phase='done', current_turn_id=NULL, error=NULL, completed_at=?,
                      end_reason=COALESCE(end_reason, ?), updated_at=? WHERE id=?""", (status, now, "all_questions" if status == "completed" else "ended_by_user", now, iid))
         reports.store_report(c, iid)
+        log.info("interview %s %s (%s)", iid, status, "all questions" if status == "completed" else "ended by the user")
 
     def _after_finish(self, iid: int) -> None:
         self.executor.submit(self._generate_narrative, iid)
 
     # ---------------------------------------------------------------- evaluation worker
     def _evaluate(self, iid: int, turn_id: int) -> None:
+        started = time.monotonic()
         try:
             with self.db.read() as c:
                 iv = self._row(c, iid)
@@ -547,10 +565,13 @@ class InterviewService:
                 thread.append({"question": p["question_text"], "answer": p["answer_text"] or "",
                                "missing": ev.get("missing_concepts", []), "misconceptions": ev.get("misconceptions", [])})
             said = turn["answer_text"] or ""
+            # A question about a resume carries that resume's text (the question itself, the claim excerpt): in cloud mode the gateway
+            # sends it only with that resume's consent, however this interview was created and whenever the mode was switched.
+            resume_ids = [item["resume_id"]] if (item["source"] if "source" in item.keys() else "bank") == "resume" else []
             interpreted: Optional[str] = None
             label = f"Q{item['position'] + 1}" + (" follow-up" if turn["kind"] == "followup" else "")
             if (turn["answer_source"] or "typed") == "voice" and said.strip():   # repair speech-recognition garble before grading
-                with usage_context(iid, label):
+                with usage_context(iid, label), resume_content(resume_ids):
                     fixed = self.evaluator.interpret_transcript(turn["question_text"], said)
                 interpreted = fixed if fixed.strip() != said.strip() else None
             ctx = EvalContext(
@@ -562,13 +583,16 @@ class InterviewService:
                 claim=_claim(item),
                 profile_key=eval_profiles.detect_category(topic=item["topic"], text=item["text"], interview_type=iv["interview_type"]),
             )
-            with usage_context(iid, label):
+            with usage_context(iid, label), resume_content(resume_ids):
                 raw = self.evaluator.evaluate(ctx, self.questions.get_rubric())
                 self._polish_followup(raw, item=item, turn=turn, config=config, prior=prior, answer=interpreted or said)
         except LLMError as e:
             self._fail(iid, turn_id, e.message)
             return
-        except AppError:
+        except AppError as e:
+            if e.code == "not_found":         # the interview was deleted meanwhile: nothing left to update
+                return
+            self._fail(iid, turn_id, e.message)   # anything else: 'evaluation failed', answer kept, Retry possible
             return
         except Exception as e:  # never leave the interview stuck in 'evaluating'
             log.exception("unexpected evaluation failure")
@@ -576,6 +600,7 @@ class InterviewService:
             return
         try:
             self._apply(iid, turn_id, raw, interpreted, profile_key=ctx.profile_key, input_hash=getattr(self.evaluator, "last_input_hash", None))
+            log.info("interview %s: turn %s graded in %.1f s (profile %s)", iid, turn_id, time.monotonic() - started, ctx.profile_key)
         except Exception as e:
             log.exception("failed to apply evaluation")
             self._fail(iid, turn_id, f"Could not save the evaluation ({type(e).__name__}).")
@@ -602,12 +627,19 @@ class InterviewService:
             kind = None
             if config.mode == "adaptive":
                 decision, kind = self._adaptive_followup(c, iv, config, item, turn, raw, rubric, interpreted, profile_key, previous)
-            else:                             # fixed interviews keep the v1 follow-up policy exactly
+            else:                             # fixed interviews keep the v1 follow-up policy; "no attempt" is the grounded verdict,
+                grounded = self.evaluator.assess(raw, answer=answer_text, interpreted_answer=interpreted, question=turn["question_text"])     # not just the wording
                 decision = decide_followup(raw, max_followups=config.max_followups, used_followups=item["followup_count"],
-                                           previous_questions=previous, answer=answer_text)
+                                           previous_questions=previous, answer=answer_text, non_attempt=grounded.classification == "no_attempt")
+            claim = _claim(item)
+            resume_sources = None
+            if claim is not None:              # everything this candidate, the questions and the resume excerpt actually said
+                said = [r["answer_text"] or "" for r in c.execute("SELECT answer_text FROM turns WHERE item_id=?", (item["id"],))]
+                resume_sources = [*previous, *said, str(claim.get("excerpt") or ""), str(claim.get("label") or "")]
             final = self.evaluator.finalize(raw, rubric, decision, difficulty=item["difficulty"] if item else None,
                                             interpreted_answer=interpreted, answer=answer_text, profile_key=profile_key,
-                                            input_hash=input_hash, followup_kind=kind)
+                                            input_hash=input_hash, followup_kind=kind, resume_sources=resume_sources,
+                                            question=turn["question_text"])
             now = utcnow()
             c.execute("UPDATE turns SET status='evaluated', evaluation_json=?, score=?, evaluated_at=? WHERE id=?",
                       (final.model_dump_json(), final.score, now, turn_id))
@@ -638,7 +670,7 @@ class InterviewService:
                            previous: list[str]) -> tuple[FollowUpDecision, Optional[str]]:
         """Adaptive follow-up: the same hard limits as fixed interviews, plus clarify / deepen / scenario choices and a loop guard."""
         answer = turn["answer_text"] or ""
-        g = self.evaluator.assess(raw, answer=answer, interpreted_answer=interpreted)
+        g = self.evaluator.assess(raw, answer=answer, interpreted_answer=interpreted, question=turn["question_text"])
         level = question_level(raw.question_level, item["difficulty"])
         prelim = eval_profiles.score_answer(g.dimension_scores, eval_profiles.get_profile(profile_key), rubric, level, raw.production_relevant).score
         earlier = [r["score"] for r in c.execute("SELECT score FROM turns WHERE item_id=? AND status='evaluated' AND score IS NOT NULL ORDER BY seq", (item["id"],))]
@@ -648,7 +680,7 @@ class InterviewService:
             deeper_question=raw.deeper_question, score=prelim, classification=g.classification, confidence=g.confidence,
             practical_score=g.dimension_scores.practical_application, strategy=config.strategy, level=adaptive.LEVELS[state.level],
             used=item["followup_count"], max_followups=config.max_followups, previous_scores=earlier,
-            is_followup_turn=turn["kind"] == "followup", non_attempt=is_non_attempt(answer),
+            is_followup_turn=turn["kind"] == "followup", non_attempt=g.classification == "no_attempt",
             too_similar=lambda q: too_similar(q, previous))
         return FollowUpDecision(choice.ask, question=choice.question, reason=choice.reason, suppressed_reason=choice.suppressed_reason), choice.kind
 
@@ -657,7 +689,7 @@ class InterviewService:
         Any failure keeps the grader's own draft; this step can never make an evaluation fail."""
         if not (self.evaluator.writes_followups_separately() and raw.needs_followup):
             return
-        if config.max_followups <= item["followup_count"] or is_non_attempt(answer):
+        if config.max_followups <= item["followup_count"] or is_pure_non_attempt(answer) or (is_non_attempt(answer) and not raw.correct_points):
             return
         gap = next(iter([*raw.missing_concepts, *raw.misconceptions]), "")
         if not gap:
@@ -701,7 +733,8 @@ class InterviewService:
             if digest is None:  # nothing was evaluated; the rule-based text is all there is
                 reports.set_narrative(self.db, iid, None, "ready", None)
                 return
-            narrative = self.evaluator.narrative(digest)
+            with resume_content(reports.narrative_resume_ids(data)):    # cloud mode: sent only with each resume's consent
+                narrative = self.evaluator.narrative(digest)
             reports.set_narrative(self.db, iid, narrative.model_dump(), "ready", None)
         except LLMError as e:
             reports.set_narrative(self.db, iid, None, "failed", e.message)
