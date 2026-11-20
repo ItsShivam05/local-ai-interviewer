@@ -67,7 +67,7 @@ export interface HistoryRow { id: number; title: string; interview_type: string;
 
 export interface ReportTurn { seq: number; kind: string; question: string; answer: string | null; source: string | null; status: string; score: number | null; evaluation: Evaluation | null }
 export interface ReportQuestion { position: number; text: string; topic: string | null; difficulty: string | null; status: string; score: number | null; verdict: string | null; followups_asked: number; turns: ReportTurn[];
-  source?: "bank" | "resume"; resume_id?: number | null; resume_name?: string | null; resume_deleted?: boolean; claim?: Claim | null }
+  source?: "bank" | "resume"; resume_id?: number | null; resume_name?: string | null; resume_deleted?: boolean; claim?: Claim | null; has_rubric?: boolean }
 export interface ResumeClaimResult { resume_id: number | null; resume_name: string; section: string; label: string; average_score: number; verdict: "Solid" | "Shaky" | "Weak"; questions: number; scored: number; question_numbers: number[]; tip: string; resume_deleted?: boolean }
 export interface Insights { overall_summary: string; strengths: string[]; knowledge_gaps: string[]; repeated_misconceptions: string[]; topics_to_revise: string[]; recommendations: string[] }
 export interface Report {
@@ -133,7 +133,7 @@ export interface AITest {
   at: string; ok: boolean; key_ok: boolean; models: string[]; missing: Record<string, string>; suggestions: Record<string, string[]>; message?: string; code?: string;
   message_test: { ok: boolean; model: string; text?: string; code?: string; message?: string; prompt_tokens?: number; output_tokens?: number } | null;
 }
-export interface AIProvider { name: string; keys_url: string; data_url: string; retention: string }
+export interface AIProvider { name: string; keys_url: string; data_url: string; retention: string; custom_host?: string | null }
 export interface AIState {
   mode: "local" | "cloud"; ready: boolean; config: AIConfig; key: { set: boolean; source: "saved" | "environment" | null; hint: string | null };
   budget: Budget; last_test: AITest | null; local_model: string; roles: Record<string, string>; provider: AIProvider; sent_to_cloud: string[]; stays_local: string[];
