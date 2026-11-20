@@ -117,9 +117,38 @@ def http(url: str, *, data: Optional[dict] = None, timeout: float = 2.0) -> Opti
 
 
 def port_busy(port: int) -> bool:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.settimeout(0.6)
-        return s.connect_ex(("127.0.0.1", port)) == 0
+    """True when something already listens on this port on either loopback address. The app binds 127.0.0.1 only, but a browser may
+    resolve "localhost" to ::1 first, so another program on [::1]:port would be the one answering at the app's address."""
+    for family, host in ((socket.AF_INET, "127.0.0.1"), (socket.AF_INET6, "::1")):
+        try:
+            with socket.socket(family, socket.SOCK_STREAM) as s:
+                s.settimeout(0.6)
+                if s.connect_ex((host, port)) == 0:
+                    return True
+        except OSError:                                   # no IPv6 on this machine
+            continue
+    return False
+
+
+def private_log_dir() -> Path:
+    """logs/ readable by this user only: the logs hold file paths and error text. (No effect on Windows, where the profile folder
+    is already per-user.)"""
+    LOG_DIR.mkdir(exist_ok=True)
+    try:
+        os.chmod(LOG_DIR, 0o700)
+    except OSError:
+        pass
+    return LOG_DIR
+
+
+def open_log(name: str, mode: str):
+    path = private_log_dir() / name
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | (os.O_APPEND if "a" in mode else os.O_TRUNC) | getattr(os, "O_BINARY", 0), 0o600)
+    try:
+        os.chmod(path, 0o600)                             # a file from an older version keeps its old mode otherwise
+    except OSError:
+        pass
+    return os.fdopen(fd, mode)
 
 
 def ollama_up() -> bool:
@@ -293,16 +322,19 @@ def drop_pid(name: str) -> None:
     (RUN_DIR / f"{name}.pid").unlink(missing_ok=True)
 
 
+_CHILDREN: dict[int, subprocess.Popen] = {}     # processes this launcher run started (so stopping one of them can reap it)
+
+
 def spawn(cmd: list[str], log_name: str, cwd: Path, env: Optional[dict] = None) -> int:
     """Start a detached background process (survives closing the terminal) logging to logs/<log_name>."""
-    LOG_DIR.mkdir(exist_ok=True)
     kw: dict = {}
     if WINDOWS:
         kw["creationflags"] = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
     else:
         kw["start_new_session"] = True
-    with open(LOG_DIR / log_name, "ab") as log:
+    with open_log(log_name, "ab") as log:
         proc = subprocess.Popen(cmd, cwd=str(cwd), env=env, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, close_fds=True, **kw)
+    _CHILDREN[proc.pid] = proc
     return proc.pid
 
 
@@ -314,10 +346,21 @@ def _wait_gone(pid: int, seconds: float) -> bool:
 
 
 def terminate(pid: int, grace: float = 3.0) -> None:
-    """Stop a process we started and everything it spawned."""
+    """Stop a process we started and everything it spawned. A child of this very run is also reaped (no zombie left behind)."""
+    proc = _CHILDREN.pop(pid, None)
+
+    def gone(seconds: float) -> bool:
+        if proc is None:
+            return _wait_gone(pid, seconds)
+        try:
+            proc.wait(timeout=seconds)       # waits for the exit and collects it
+            return True
+        except subprocess.TimeoutExpired:
+            return False
+
     if WINDOWS:
         subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True)   # /T = the whole tree
-        _wait_gone(pid, grace)
+        gone(grace)
         return
     for sig, wait in ((signal.SIGTERM, grace), (signal.SIGKILL, 1.0)):
         try:
@@ -326,8 +369,9 @@ def terminate(pid: int, grace: float = 3.0) -> None:
             try:
                 os.kill(pid, sig)
             except OSError:
+                gone(0.5)
                 return
-        if _wait_gone(pid, wait):
+        if gone(wait):
             return
 
 
@@ -346,12 +390,17 @@ def venv_ready() -> bool:
     return subprocess.run([str(VENV_PY), "-c", "import fastapi,uvicorn,httpx,pydantic,multipart,reportlab,pypdfium2"], capture_output=True).returncode == 0
 
 
+RUNTIME_LOCK = BACKEND / "requirements.lock"     # exact versions with hashes, generated from requirements.txt
+
+
 def pip_install(req: Path) -> None:
+    """Install a requirements file. A *.lock file is installed with --require-hashes: every package must match a recorded hash."""
+    hashes = ["--require-hashes"] if req.suffix == ".lock" else []
     uv = shutil.which("uv")
     if uv:
-        subprocess.run([uv, "pip", "install", "-q", "--python", str(VENV_PY), "-r", str(req)], check=True)
+        subprocess.run([uv, "pip", "install", "-q", *hashes, "--python", str(VENV_PY), "-r", str(req)], check=True)
     else:
-        subprocess.run([str(VENV_PY), "-m", "pip", "install", "-q", "-r", str(req)], check=True)
+        subprocess.run([str(VENV_PY), "-m", "pip", "install", "-q", *hashes, "-r", str(req)], check=True)
 
 
 def ensure_backend_env() -> bool:
@@ -360,7 +409,7 @@ def ensure_backend_env() -> bool:
     if VENV_PY.is_file():       # an older install that lacks a newer dependency (e.g. the PDF writer): top it up in place, keep everything else
         info("Updating backend dependencies (one-time, needs internet)...")
         try:
-            pip_install(BACKEND / "requirements.txt")
+            pip_install(RUNTIME_LOCK)
         except (subprocess.CalledProcessError, OSError) as e:
             bad(f"Could not update the Python environment: {e}")
             return False
@@ -373,7 +422,7 @@ def ensure_backend_env() -> bool:
                 subprocess.run([uv, "venv", str(VENV), "-q"], check=True)
         else:
             subprocess.run([sys.executable, "-m", "venv", str(VENV)], check=True)
-        pip_install(BACKEND / "requirements.txt")
+        pip_install(RUNTIME_LOCK)
     except (subprocess.CalledProcessError, OSError) as e:
         bad(f"Could not set up the Python environment: {e}")
         if not WINDOWS and not MAC:
@@ -481,8 +530,7 @@ def cmd_start(args: argparse.Namespace) -> int:
             return 1
     if not dev and frontend_stale():
         info("Building the frontend...")
-        LOG_DIR.mkdir(exist_ok=True)
-        with open(LOG_DIR / "frontend-build.log", "wb") as log:
+        with open_log("frontend-build.log", "wb") as log:
             built = subprocess.run([npm, "run", "build", "--silent"], cwd=FRONTEND, stdout=log, stderr=subprocess.STDOUT).returncode == 0
         if not built:
             bad("Frontend build failed - see logs/frontend-build.log")

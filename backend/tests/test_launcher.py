@@ -59,6 +59,34 @@ def test_have_model_accepts_latest_tag(m):
     assert m.have_model(names, "qwen3.5:4b") and m.have_model(names, "phonon") and not m.have_model(names, "llama3")
 
 
+def test_port_busy_also_sees_a_listener_on_the_ipv6_loopback(m):
+    """Security audit, Nov 2026: a program on [::1]:port answers at http://localhost:port in browsers that try IPv6 first."""
+    try:
+        srv = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+        srv.bind(("::1", 0))
+    except OSError:
+        pytest.skip("no IPv6 loopback on this machine")
+    with srv:
+        srv.listen(1)
+        assert m.port_busy(srv.getsockname()[1])
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX file modes")
+def test_logs_are_readable_by_the_owner_only(m):
+    with m.open_log("backend.log", "ab") as f:
+        f.write(b"x")
+    (m.LOG_DIR / "old.log").write_bytes(b"old")
+    os.chmod(m.LOG_DIR / "old.log", 0o644)
+    with m.open_log("old.log", "ab") as f:
+        f.write(b"y")
+    assert (m.LOG_DIR.stat().st_mode & 0o777) == 0o700
+    assert all((p.stat().st_mode & 0o777) == 0o600 for p in m.LOG_DIR.iterdir())
+    assert (m.LOG_DIR / "old.log").read_bytes() == b"oldy"
+    with m.open_log("old.log", "wb") as f:
+        f.write(b"z")
+    assert (m.LOG_DIR / "old.log").read_bytes() == b"z"
+
+
 def test_port_busy_detects_a_listener(m):
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
@@ -163,7 +191,7 @@ def test_an_older_install_missing_a_new_dependency_is_topped_up_not_rebuilt(m, t
     monkeypatch.setattr(m, "pip_install", lambda req: (ran.append(req.name), state.update(installed=True)))
     monkeypatch.setattr(m.subprocess, "run", lambda cmd, **k: ran.append(" ".join(map(str, cmd))) or type("R", (), {"returncode": 0 if state["installed"] else 1})())
     assert m.ensure_backend_env() is True
-    assert "requirements.txt" in ran                                         # the requirements were installed...
+    assert "requirements.lock" in ran                                        # the hash-locked requirements were installed...
     assert not any("venv" in x and "-m venv" in x or x.startswith("uv venv") for x in ran)   # ...without creating a new environment
 
 
@@ -246,3 +274,15 @@ def test_node_requirement_matches_package_json_engines(m):
     import json
     engines = json.loads((m.ROOT / "frontend" / "package.json").read_text(encoding="utf-8"))["engines"]["node"]
     assert engines == "^20.19.0 || >=22.12.0" and "20.19" in m.NODE_REQUIREMENT and "22.12" in m.NODE_REQUIREMENT
+
+
+@pytest.mark.parametrize("with_uv", [True, False])
+def test_a_lock_file_is_installed_with_hash_checking_and_a_plain_file_without(m, monkeypatch, with_uv):
+    """Review round 0: Python dependencies were ranges only. The launcher now installs exact versions whose hashes must match."""
+    ran = []
+    monkeypatch.setattr(m.shutil, "which", lambda name: "/usr/bin/uv" if with_uv and name == "uv" else None)
+    monkeypatch.setattr(m.subprocess, "run", lambda cmd, **k: ran.append([str(c) for c in cmd]))
+    m.pip_install(m.BACKEND / "requirements.lock")
+    m.pip_install(m.BACKEND / "requirements-stt.txt")
+    assert "--require-hashes" in ran[0] and ran[0][-1].endswith("requirements.lock")
+    assert "--require-hashes" not in ran[1]
