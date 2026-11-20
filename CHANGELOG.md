@@ -2,11 +2,12 @@
 
 All notable changes to this project. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/) as defined for this app in [docs/maintainers/releasing.md](docs/maintainers/releasing.md).
-No version has been tagged or released on GitHub yet.
 
 ## [Unreleased]
 
-Planned as 2.0.0 (database schema v6; scores of categorised questions change, see *Changed*).
+## [2.0.0] - 2026-11-21
+
+Database schema v6; scores of categorised questions change, see *Changed*.
 
 ### Changed: cloud mode now uses Groq (action needed if you used cloud mode)
 - The optional cloud mode moved from Ollama cloud (which ended free usage on 9 Nov 2026) to the **Groq API** with your own key
@@ -199,7 +200,9 @@ Found by an audit of the whole project in November 2026.
 - A short answer containing "I don't know" that the grader still found nothing of value in is capped at 2 per dimension.
 - Database schema v6 (additive: new columns and tables; existing data untouched; upgrades automatically from every earlier version).
 
-## 1.0.0 (untagged)
+## [1.0.0] - 2026-11-09
+
+First public version (never tagged).
 
 The first public version of the repository (commits `2b07ee2` and `900f970`; the version number in the code was 1.0.0, but no
 Git tag or GitHub release was created): local mock interviews with a question bank, spoken questions, Whisper microphone input,
