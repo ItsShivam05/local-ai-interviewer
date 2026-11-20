@@ -6,6 +6,7 @@ from typing import Any
 import os
 import sqlite3
 import tempfile
+import time
 
 from fastapi import APIRouter, BackgroundTasks, Request
 from fastapi.responses import FileResponse
@@ -27,7 +28,7 @@ def health(request: Request) -> dict[str, Any]:
     c = request.app.state.c
     s = c.settings
     out: dict[str, Any] = {
-        "app": "ok", "bind": f"{s.host}:{s.port}", "local_only": True,
+        "app": "ok", "bind": f"{s.host}:{s.port}", "local_only": s.host in ("127.0.0.1", "localhost", "::1"),      # the bind address is loopback (says nothing about cloud mode)
         "ollama": {"ok": False, "host": s.ollama_host, "version": None, "error": None},
         "llm": {"model": s.llm_model, "installed": False, "loaded": False, "error": None},
         "tts": {"model": s.tts_model, "provider": s.tts_provider, "engine": "phonon" if s.tts_provider == "phonon" else "system",
@@ -156,12 +157,15 @@ def evaluation_profiles() -> dict[str, Any]:
             "note": "Your rubric weights in Settings scale the matching dimensions of every profile."}
 
 
+BACKUP_LEFTOVER_AGE_S = 3600
+
+
 @router.get("/backup")
 def backup(request: Request, background: BackgroundTasks) -> FileResponse:
     """A consistent copy of the whole database (SQLite online backup), downloaded to this computer only.
     It contains your answers, reports, resumes' text and any saved cloud API key: keep it private.
-    The copy is written inside the private data folder (0700), never the shared temp folder, and leftovers from an interrupted
-    download are removed on the next backup and at startup of this endpoint's next call."""
+    The copy is written inside the private data folder (0700), never the shared temp folder. It is deleted once sent; a copy left by an
+    interrupted download is removed by a later backup once it is an hour old (a download still in progress is left alone)."""
     c = request.app.state.c
     folder = c.settings.data_dir / "tmp"
     folder.mkdir(parents=True, exist_ok=True)
@@ -169,9 +173,11 @@ def backup(request: Request, background: BackgroundTasks) -> FileResponse:
         os.chmod(folder, 0o700)
     except OSError:
         pass
-    for old in folder.glob("interviewer-backup-*.sqlite3"):      # an earlier download that was interrupted
+    cutoff = time.time() - BACKUP_LEFTOVER_AGE_S
+    for old in folder.glob("interviewer-backup-*.sqlite3"):      # an earlier download that was interrupted; never one still being sent
         try:
-            old.unlink()
+            if old.stat().st_mtime < cutoff:
+                old.unlink()
         except OSError:
             pass
     fd, tmp = tempfile.mkstemp(prefix="interviewer-backup-", suffix=".sqlite3", dir=folder)

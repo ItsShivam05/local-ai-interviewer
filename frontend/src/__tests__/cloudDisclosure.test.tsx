@@ -5,6 +5,13 @@ import { ExtLink, RetentionNote } from "../components/CloudDisclosure";
 const provider = { name: "Groq", keys_url: "/fake/keys", data_url: "/fake/policy", retention: "Groq says it does not keep your text by default, but may log requests for up to 30 days." };
 
 describe("cloud disclosure", () => {
+  it("says so when cloud requests go to a custom server instead of the named provider", () => {
+    const { rerender } = render(<RetentionNote provider={provider} />);
+    expect(screen.queryByTestId("custom-endpoint")).toBeNull();
+    rerender(<RetentionNote provider={{ ...provider, custom_host: "llm.example.test" }} />);
+    expect(screen.getByTestId("custom-endpoint")).toHaveTextContent("llm.example.test, not to Groq");
+  });
+
   it("shows the retention sentence from the API and links to the data policy, opening outside the app", () => {
     render(<RetentionNote provider={provider} />);
     expect(screen.getByTestId("retention")).toHaveTextContent("up to 30 days");

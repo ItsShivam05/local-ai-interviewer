@@ -5,6 +5,7 @@ so this is where you can look at them over time (Settings -> Model usage).
 """
 from __future__ import annotations
 
+import json
 import logging
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -17,6 +18,7 @@ from .pricing import ModelPrice, cost_usd, find_price
 log = logging.getLogger("interviewer.usage")
 
 KEEP_ROWS = 2000          # older rows are pruned
+SPEND_KEY = "ai_cloud_spend"   # settings row: {"total": dollars ever, "day": local date, "today": dollars that day}
 COLD_LOAD_MS = 1000       # a model load slower than this is what makes the computer stall
 
 
@@ -73,12 +75,15 @@ class UsageRecorder:
         ctx = _CTX.get() or {}
         try:
             now = datetime.now(timezone.utc)
+            cost = self._cost(u, now)
             with self.db.tx() as c:
+                if cost:
+                    self._add_spend(c, cost)          # before the row goes in: on first use the ledger is seeded from the rows that exist
                 c.execute("""INSERT INTO llm_usage(created_at, model, purpose, prompt_tokens, output_tokens, load_ms, prompt_ms, output_ms, total_ms, detail,
                                                    interview_id, label, provider, cost_usd) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                           (now.isoformat(timespec="seconds"), u["model"], u["purpose"], u.get("prompt_tokens"), u.get("output_tokens"), int(u.get("load_ms") or 0),
                            int(u.get("prompt_ms") or 0), int(u.get("output_ms") or 0), int(u.get("total_ms") or 0), (u.get("detail") or None),
-                           u.get("interview_id", ctx.get("interview_id")), u.get("label", ctx.get("label")), u.get("provider", "local"), self._cost(u, now)))
+                           u.get("interview_id", ctx.get("interview_id")), u.get("label", ctx.get("label")), u.get("provider", "local"), cost))
                 self._since_prune += 1
                 if self._since_prune >= 100:
                     self._since_prune = 0
@@ -147,11 +152,40 @@ class UsageRecorder:
         return {"all_time": pack(all_), "today": pack(day)}
 
     # ------------------------------------------------------------ spending (the budget guard reads these)
+    # ------------------------------------------------------------ what the cloud has cost (the budget's memory)
+    # Kept apart from the usage rows on purpose: those are pruned to the newest KEEP_ROWS and can be cleared by the user, and a
+    # budget that forgets what was spent whenever the log is cleared is not a budget.
+    @staticmethod
+    def _today() -> str:
+        return datetime.now().astimezone().date().isoformat()
+
+    def _spend(self, c) -> dict[str, Any]:
+        """The ledger, rolled over to today. On first use it is seeded from the usage rows that still exist."""
+        row = c.execute("SELECT value FROM settings WHERE key=?", (SPEND_KEY,)).fetchone()
+        today = self._today()
+        try:
+            led = json.loads(row[0]) if row else None
+        except ValueError:
+            led = None
+        if not isinstance(led, dict):
+            total = c.execute("SELECT SUM(COALESCE(cost_usd,0)) FROM llm_usage WHERE provider='cloud'").fetchone()[0] or 0.0
+            day = c.execute("SELECT SUM(COALESCE(cost_usd,0)) FROM llm_usage WHERE provider='cloud' AND created_at >= ?", (local_midnight_utc(),)).fetchone()[0] or 0.0
+            led = {"total": total, "day": today, "today": day}
+        if led.get("day") != today:
+            led = {"total": float(led.get("total") or 0.0), "day": today, "today": 0.0}
+        return {"total": float(led.get("total") or 0.0), "day": today, "today": float(led.get("today") or 0.0)}
+
+    def _add_spend(self, c, cost: float) -> None:
+        led = self._spend(c)
+        led["total"] += cost
+        led["today"] += cost
+        c.execute("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (SPEND_KEY, json.dumps(led)))
+
     def cloud_spend(self, since: Optional[str] = None) -> float:
+        """Estimated dollars spent on cloud calls: today (when `since` is given) or in total. Survives pruning and "Clear usage"."""
         with self.db.read() as c:
-            row = c.execute("SELECT SUM(COALESCE(cost_usd,0)) FROM llm_usage WHERE provider='cloud'" + (" AND created_at >= ?" if since else ""),
-                            (since,) if since else ()).fetchone()
-        return round(row[0] or 0.0, 6)
+            led = self._spend(c)
+        return round(led["today"] if since else led["total"], 6)
 
     def for_interview(self, interview_id: int) -> dict[str, Any]:
         """What the AI cost for one interview (shown on its report)."""

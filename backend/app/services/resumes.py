@@ -37,6 +37,7 @@ from .prompts import RESUME_PARSE_SYSTEM, RESUME_PROFILE_SCHEMA, RESUME_QUESTION
 from .questions import QuestionService
 from .resume_profile import chunk_text, coerce_profile, is_empty, merge_profiles, skill_preview
 from .resume_questions import FOCUS_KINDS, PER_CLAIM, Claim, DraftBatch, QuestionWriter, Slot, allocate, build_claims
+from .gateway import resume_content
 from .usage import usage_context
 
 log = logging.getLogger("interviewer.resumes")
@@ -230,6 +231,7 @@ class ResumeService:
         if not data.startswith(rx.PDF_MAGIC):
             raise AppError(415, "not_a_pdf", "This file is not a PDF. Save or export your resume as a PDF and upload that.")
         try:
+            rx.check_inflation(data)                         # before the PDF library touches it
             pages = rx.count_pages(data)
         except rx.PdfError as e:
             raise AppError(503 if e.code == "pdf_support_missing" else 422, e.code, e.message) from e
@@ -368,7 +370,8 @@ class ResumeService:
             messages = [{"role": "system", "content": RESUME_PARSE_SYSTEM}, {"role": "user", "content": resume_parse_user_prompt(chunk, i, len(chunks))}]
             t0 = time.monotonic()
             try:
-                with usage_context(None, r["name"]):
+                # checked again for EVERY part: switching to cloud mode while a resume is being organised must not send the rest
+                with usage_context(None, r["name"]), resume_content([rid]):
                     reply = self.evaluator.call_json(messages, RESUME_PROFILE_SCHEMA, ProfileReply, max_tokens=PARSE_MAX_TOKENS, purpose="resume_parse")
                 parts.append(reply.profile)
                 log.info("resume %s: part %d/%d organised in %.1fs", rid, i, len(chunks), time.monotonic() - t0)
@@ -377,7 +380,7 @@ class ResumeService:
                 log.warning("resume %s: part %d/%d failed (%s)", rid, i, len(chunks), e.code)
                 # A rate limit reaches here only when it could not be waited out inside the request (e.g. the daily allowance):
                 # asking for the remaining parts would fail at once and use up requests for nothing.
-                if e.code in {"budget_reached", "auth_failed", "auth_missing", "rate_limited", "ollama_unavailable", "model_missing"}:
+                if e.code in {"budget_reached", "auth_failed", "auth_missing", "rate_limited", "ollama_unavailable", "model_missing", "cloud_consent_required"}:
                     break                                           # every other part would fail the same way
         if not self._current(rid, job_id):
             return
@@ -519,9 +522,9 @@ class ResumeService:
             raise conflict("cloud_consent_required", "Cloud mode is on: allow sending " + ", ".join(f"“{n}”" for _, n in missing) +
                            " to Groq first.", resume_ids=[rid for rid, _ in missing])
 
-    def _writer(self, style: str, difficulty: str, job: Optional[dict[str, Any]] = None) -> QuestionWriter:
+    def _writer(self, style: str, difficulty: str, job: Optional[dict[str, Any]] = None, *, resume_ids: list[int]) -> QuestionWriter:
         def call(messages: list[dict[str, str]]) -> DraftBatch:
-            with usage_context(None, "Resume questions"):
+            with usage_context(None, "Resume questions"), resume_content(resume_ids):
                 return self.evaluator.call_json(messages, RESUME_QUESTIONS_SCHEMA, DraftBatch, max_tokens=QUESTIONS_MAX_TOKENS, purpose="resume_questions")
 
         def progress(done: int, total: int) -> None:
@@ -556,7 +559,7 @@ class ResumeService:
     def _run_generation(self, job: dict[str, Any], slots: list[Slot], body: GenerateQuestionsIn) -> None:
         t0 = time.monotonic()
         try:
-            res = self._writer(body.style, body.difficulty, job).run(slots, exclude=list(body.exclude_texts), per_claim_cap=PER_CLAIM[body.depth])
+            res = self._writer(body.style, body.difficulty, job, resume_ids=list(body.resume_ids)).run(slots, exclude=list(body.exclude_texts), per_claim_cap=PER_CLAIM[body.depth])
             with self._lock:
                 job["questions"] = res.questions
                 job["warnings"] = job["warnings"] + [w for w in res.warnings if not job["warnings"]]
@@ -604,7 +607,7 @@ class ResumeService:
         kinds = [k for k in dict.fromkeys(kinds) if k]
         kind = kinds[1] if len(kinds) > 1 and body.kind else kinds[0]        # a different angle from the question being replaced
         focus = next(iter(claim.focus), "experience")
-        res = self._writer(body.style, body.difficulty).run([Slot(claim, kind, focus)], exclude=list(body.existing_texts), per_claim_cap=99, max_rounds=2)
+        res = self._writer(body.style, body.difficulty, resume_ids=[rid]).run([Slot(claim, kind, focus)], exclude=list(body.existing_texts), per_claim_cap=99, max_rounds=2)
         if not res.questions:
             raise AppError(422, "no_question", "The AI could not write a different question about this. Try again, or edit the question yourself.")
         return res.questions[0]

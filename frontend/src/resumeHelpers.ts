@@ -12,6 +12,9 @@ export function nextResumeName(existing: string[]): string {
 }
 
 export const WORKING: ResumeStatus[] = ["extracting", "ocr", "structuring"];
+/** Cloud mode is on and this finished resume has not been allowed to leave the computer: interviews about it cannot be graded in the cloud. */
+export const needsCloudPermission = (r: Pick<ResumeSummary, "status" | "consent_cloud">, mode: "local" | "cloud" | undefined) =>
+  mode === "cloud" && r.status === "ready" && r.consent_cloud !== 1;
 export const awaitingConsent = (r: Pick<ResumeSummary, "status" | "stage_detail">) => r.status === "uploaded" && r.stage_detail === "awaiting_cloud_consent";
 /** Still being read or organised (the list keeps polling while any resume is like this). */
 export const isWorking = (r: Pick<ResumeSummary, "status" | "stage_detail">) => WORKING.includes(r.status) || (r.status === "uploaded" && !awaitingConsent(r));

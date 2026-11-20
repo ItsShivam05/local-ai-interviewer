@@ -83,12 +83,14 @@ def preview_json(raw: str, existing_texts: list[str]) -> ImportPreviewOut:
     if not raw or not raw.strip():
         return ImportPreviewOut(items=[], count=0, duplicates=0, errors=["Nothing to import: the file is empty."], warnings=[])
     try:
-        data: Any = json.loads(raw)
+        data: Any = json.loads(raw)                    # a pathologically nested file raises RecursionError: reported like any bad JSON
     except json.JSONDecodeError as e:
         return ImportPreviewOut(
             items=[], count=0, duplicates=0, warnings=[],
             errors=[f"Invalid JSON: {e.msg} (line {e.lineno}, column {e.colno})."],
         )
+    except RecursionError:
+        return ImportPreviewOut(items=[], count=0, duplicates=0, warnings=[], errors=["Invalid JSON: the file is nested too deeply to read."])
     set_name = None
     if isinstance(data, dict):
         set_name = data.get("name") if isinstance(data.get("name"), str) else None

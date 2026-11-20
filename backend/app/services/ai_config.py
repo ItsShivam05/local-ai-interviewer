@@ -172,6 +172,22 @@ class AIConfigStore:
         self._write(CONFIG_KEY, self._dump(cfg))
         return cfg
 
+    def resumes_without_cloud_consent(self, resume_ids: tuple[Optional[int], ...]) -> list[str]:
+        """Names of the given resumes that may NOT be sent to the cloud: no consent recorded, declined, deleted, or unidentified."""
+        known = [i for i in resume_ids if i is not None]
+        rows: dict[int, tuple[str, Optional[int]]] = {}
+        if known:
+            with self.db.read() as c:
+                rows = {r[0]: (r[1], r[2]) for r in c.execute(
+                    f"SELECT id, name, consent_cloud FROM resumes WHERE id IN ({','.join('?' * len(known))})", tuple(known))}
+        out: list[str] = []
+        for i in resume_ids:
+            if i is None or i not in rows:
+                out.append("a resume that is no longer in the app")
+            elif rows[i][1] != 1:
+                out.append(rows[i][0])
+        return list(dict.fromkeys(out))
+
     # ------------------------------------------------------------ the API key (write-only from the outside)
     def api_key(self) -> Optional[str]:
         env = (os.environ.get("GROQ_API_KEY") or "").strip()

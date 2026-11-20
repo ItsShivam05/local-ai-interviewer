@@ -1,4 +1,5 @@
 """Settings -> AI models: local by default, cloud only with a key AND consent, and the key is write-only."""
+from contextlib import closing
 import os
 import sqlite3
 import sys
@@ -121,12 +122,12 @@ def test_the_data_folder_and_database_are_private_to_this_user(cloud_client):
 def test_the_key_lives_only_in_the_settings_table(cloud_client):
     cloud_client.put("/api/ai/key", json={"api_key": SECRET})
     db_path = cloud_client.app.state.c.settings.db_path
-    raw = sqlite3.connect(db_path)
     hits = []
-    for (table,) in raw.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall():
-        for row in raw.execute(f"SELECT * FROM {table}"):
-            if SECRET in " ".join(str(v) for v in row):
-                hits.append(table)
+    with closing(sqlite3.connect(db_path)) as raw:
+        for (table,) in raw.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall():
+            for row in raw.execute(f"SELECT * FROM {table}"):
+                if SECRET in " ".join(str(v) for v in row):
+                    hits.append(table)
     assert hits == ["settings"]
 
 
@@ -234,3 +235,11 @@ def test_a_fresh_install_and_a_damaged_old_setting_both_migrate_cleanly(tmp_path
         c.execute("INSERT INTO settings(key,value) VALUES('ai_cloud_key', ?)", (OLD_KEY,))
     store = AIConfigStore(damaged)
     assert store.get().mode == "local" and store.api_key() is None
+
+
+def test_a_custom_cloud_address_is_named_instead_of_being_presented_as_groq():
+    """Security audit, Nov 2026: with GROQ_BASE_URL set, the screen still said the text goes to Groq."""
+    from app.config import CLOUD_API_URL
+    from app.routers.ai import _custom_host
+    assert _custom_host(CLOUD_API_URL) is None and _custom_host(CLOUD_API_URL + "/") is None
+    assert _custom_host("https://llm.example.test:8443/v1") == "llm.example.test:8443"

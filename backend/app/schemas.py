@@ -103,7 +103,7 @@ class ImportPreviewOut(BaseModel):
 
 class ImportCommitIn(BaseModel):
     mode: Literal["append", "replace"]
-    questions: list[QuestionIn]
+    questions: list[QuestionIn] = Field(max_length=500)        # the same limit the import preview enforces (parsing.MAX_IMPORT_QUESTIONS)
     confirm_replace: bool = False
 
 
@@ -121,7 +121,7 @@ class InterviewConfig(BaseModel):
     question_ids: Optional[list[int]] = None  # None -> every question in the set
     order: Literal["supplied", "shuffled"] = "supplied"
     max_followups: int = Field(default=1, ge=0, le=3)
-    voice: str = "default"
+    voice: str = Field(default="default", max_length=120)
     speech_speed: float = Field(default=1.0, ge=0.5, le=2.0)
     strictness: Strictness = "balanced"
     feedback_mode: Literal["immediate", "after_followups", "at_end"] = "immediate"   # at_end (what the app sends): no scores or feedback until the interview is over
@@ -223,7 +223,7 @@ class TurnRefIn(BaseModel):
 
 class SynthesizeIn(BaseModel):
     text: str = Field(min_length=1, max_length=6000)
-    voice: str = "default"
+    voice: str = Field(default="default", max_length=120)
 
 
 class RubricSettings(BaseModel):

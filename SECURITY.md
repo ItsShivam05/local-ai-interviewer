@@ -19,17 +19,25 @@ sample data, use invented data.
 
 ## Security model (summary)
 
-- The server binds to `127.0.0.1` only; the launcher refuses non-loopback hosts. Requests with a non-loopback `Host`, or a cross-site
-  `Origin` on state-changing requests, are rejected (DNS-rebinding and CSRF protection).
+- The server binds to `127.0.0.1` only; the launcher refuses non-loopback hosts. Requests with a non-loopback `Host` are
+  rejected (DNS-rebinding protection). State-changing requests must come from the app's own address: an `Origin` on another host or
+  another port (including another program on `localhost`) is refused, and so is any `/api` request a browser marks as cross-site
+  (`Sec-Fetch-Site`). Responses forbid framing by other sites and content-type sniffing. The launcher refuses to start when another
+  program already listens on the app's port on either loopback address (`127.0.0.1` or `::1`).
 - Local mode makes no outbound connections except to the local Ollama on loopback. Cloud mode is opt-in, needs explicit consent, never
-  acts as a silent fallback, and resumes need a separate per-resume consent before any of their content is sent.
+  acts as a silent fallback, and resumes need a separate per-resume consent before any of their content is sent. That consent is
+  checked again at the single place every cloud request passes through, so it also holds when the mode is switched while a resume is
+  being read or an interview is under way.
 - Candidate answers and resume text are fenced as untrusted data in every prompt; model output is schema-validated and the application
   computes all scores. Resume lines that look like instructions to an AI are flagged in the candidate profile.
-- Resume uploads: PDF magic-byte check, size and page limits, server-generated storage names (never the user's file name), files
+- Resume uploads: PDF magic-byte check, size and page limits, a limit on how far the file's compressed streams may expand (checked
+  before the PDF library opens it; best effort, it measures Flate streams only), server-generated storage names (never the user's file name), files
   `0600` in a `0700` data directory.
-- Logs contain ids, sizes and timings — never answers, resume text or API keys.
+- Logs contain ids, sizes and timings — never answers, resume text or API keys. The launcher creates `logs/` as `0700` and its
+  files as `0600` (not on Windows).
 - `GET /api/backup` and report exports are downloads to the same computer; the backup contains everything, including any saved cloud API
-  key. *Share-safe* report exports (`redact=true`) remove answers, evidence quotes and resume excerpts.
+  key. *Share-safe* report exports (`redact=true`) remove answers, evidence quotes, resume excerpts, the interview's title and its exact
+  times. Text in the Markdown export is escaped so that an answer cannot place a live image, link target or HTML tag in the file.
 
 ### The optional cloud API key
 
@@ -46,7 +54,8 @@ What cloud mode sends, and to whom: the text of questions, answers, rubrics and 
 goes to Groq's API over HTTPS. Groq's data policy (read 2026-11-18) says it does not retain this by default but may log requests for
 up to 30 days to fix reliability problems or investigate abuse, in the United States; the app shows this before you consent. The
 app cannot control or verify what a third party does with data it receives. The only cloud addresses in the source are in
-`backend/app/config.py` (enforced by `backend/tests/test_local_only.py`).
+`backend/app/config.py` (enforced by `backend/tests/test_local_only.py`). If `GROQ_BASE_URL` points somewhere else, the consent
+screen names that host and says that Groq's policy does not describe it.
 
 Upgrading from a version that used Ollama cloud: on first start the old key is deleted, mode returns to local and every consent is
 cleared, so nothing is sent to the new provider until you add a Groq key and agree again.
@@ -58,7 +67,7 @@ The workflow `.github/workflows/security.yml` runs on pull requests, on pushes t
 | Check | What it does |
 |---|---|
 | Dependency review (pull requests only) | Fails a PR that adds a dependency with a known vulnerability of high severity or worse. |
-| `pip-audit` | Audits `backend/requirements.txt` (the runtime Python dependencies) against known advisories. |
+| `pip-audit` | Audits `backend/requirements.lock` (exactly the runtime Python packages the launcher installs) against known advisories. The optional microphone dependencies in `backend/requirements-stt.txt` are not audited. |
 | `npm audit`, production dependencies | `npm audit --omit=dev --audit-level=low`: any known vulnerability in what ships to the browser fails the build. |
 | `npm audit`, all dependencies | `--audit-level=high`: build and test tools fail only on high or critical findings. |
 | CodeQL | Static analysis of Python and JavaScript/TypeScript with the `security-extended` query set. |
@@ -68,7 +77,9 @@ against untrusted input, so a low or moderate advisory in them is not an exposur
 the browser actually loads, so the bar there is any severity.
 
 [Dependabot](.github/dependabot.yml) opens grouped update pull requests weekly for pip and npm and monthly for GitHub Actions. All
-workflow actions are pinned to full commit SHAs, and workflows request least-privilege permissions.
+workflow actions are pinned to full commit SHAs, and workflows request least-privilege permissions. Python runtime and development
+dependencies are installed from hash-locked files (`backend/requirements.lock`, `backend/requirements-dev.lock`) with
+`--require-hashes`, by the launcher and by CI; the optional microphone dependencies (`requirements-stt.txt`) are not locked.
 
 ## Known limitations
 

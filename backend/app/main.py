@@ -5,6 +5,7 @@ import logging
 import re
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -36,6 +37,24 @@ LOCAL_HOST_RE = re.compile(r"^(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$", re.I)
 log = logging.getLogger("interviewer")
 
 
+def _same_app(origin: str, host: str) -> bool:
+    """Is this Origin the app's own page? A loopback name (localhost and 127.0.0.1 are the same machine) on the SAME port as the
+    request's Host. A page served from any other localhost port belongs to some other program."""
+    try:
+        o = urlsplit(origin)
+        o_port = o.port or (443 if o.scheme == "https" else 80)
+    except ValueError:
+        return False
+    if o.scheme not in ("http", "https") or o.username or o.password or not LOCAL_HOST_RE.match(o.netloc):
+        return False
+    h = urlsplit("//" + host)
+    try:
+        h_port = h.port or 80
+    except ValueError:
+        return False
+    return o_port == h_port
+
+
 def create_app(settings: Optional[Settings] = None, container: Optional[Container] = None) -> FastAPI:
     settings = settings or Settings.from_env()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -46,15 +65,31 @@ def create_app(settings: Optional[Settings] = None, container: Optional[Containe
 
     @app.middleware("http")
     async def local_only_guard(request: Request, call_next):
-        """Reject DNS-rebinding and cross-site requests: only loopback Host/Origin values are served."""
+        """Only this computer's own browser tab may use the API.
+
+        * Host must be a loopback name (stops DNS rebinding).
+        * A request that carries an Origin must come from THIS app: same host and port as the Host header. Another program's page on
+          a different localhost port is a different site and is refused (it could otherwise end or pause an interview).
+        * The browser's own Sec-Fetch-Site verdict is honoured for the API: "cross-site" and "same-site" (another port) are refused,
+          so a foreign page cannot even trigger a download of the backup or a report. Requests without the header (curl, scripts,
+          old browsers) are unaffected; "none" is the user typing or opening the address.
+        * Responses may not be framed by another site and are never sniffed."""
         host = request.headers.get("host", "")
         if not LOCAL_HOST_RE.match(host):
             return JSONResponse({"error": {"code": "forbidden_host", "message": "Local access only."}}, status_code=403)
         origin = request.headers.get("origin")
-        if origin and request.method not in ("GET", "HEAD", "OPTIONS"):
-            if not re.match(r"^https?://(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$", origin, re.I):
+        if origin is not None and request.method not in ("GET", "HEAD", "OPTIONS"):
+            if not _same_app(origin, host):
                 return JSONResponse({"error": {"code": "forbidden_origin", "message": "Cross-site request blocked."}}, status_code=403)
-        return await call_next(request)
+        if request.url.path.startswith("/api/") and request.headers.get("sec-fetch-site", "same-origin").lower() not in ("same-origin", "none"):
+            return JSONResponse({"error": {"code": "forbidden_origin", "message": "Cross-site request blocked."}}, status_code=403)
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")            # the app frames its own PDF preview; nobody else may frame it
+        response.headers.setdefault("Content-Security-Policy", "frame-ancestors 'self'")
+        response.headers.setdefault("Cross-Origin-Resource-Policy", "same-origin")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        return response
 
     @app.exception_handler(AppError)
     async def app_error(_: Request, e: AppError):
@@ -84,7 +119,7 @@ def create_app(settings: Optional[Settings] = None, container: Optional[Containe
     if dist.is_dir():
         index = dist / "index.html"
 
-        @app.get("/{path:path}", include_in_schema=False)
+        @app.api_route("/{path:path}", methods=["GET", "HEAD"], include_in_schema=False)     # HEAD: uptime checks, curl -I
         def spa(path: str):
             if path.startswith("api/"):
                 return JSONResponse({"error": {"code": "not_found", "message": "Unknown API route."}}, status_code=404)
