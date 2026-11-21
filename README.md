@@ -13,8 +13,7 @@
 
 [Quick start](#quick-start) · [Features](#features) · [How it works](#how-it-works) · [Docs](docs/README.md) · [Contributing](CONTRIBUTING.md) · [Roadmap](ROADMAP.md)
 
-<!-- Demo: replace this screenshot with the demo video (drag the .mp4 into GitHub's README editor) or docs/assets/demo.gif. -->
-<img src="docs/assets/screenshots/interview-adaptive.png" alt="An adaptive interview asking about a project from the candidate's resume, with topic, level, strategy and time left shown above the question" width="860">
+<img src="docs/assets/demo.gif" alt="Demo: pick a preset and start; a question about Snowflake is spoken and answered, a follow-up is asked, and the report shows the score with each mistake quoted from the answer and marked verified or not verified" width="860">
 
 </div>
 
