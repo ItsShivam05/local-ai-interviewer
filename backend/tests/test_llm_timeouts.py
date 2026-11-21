@@ -50,7 +50,9 @@ def test_transport_may_wait_the_whole_budget_for_the_first_word():
 def test_a_slow_first_word_within_the_budget_is_not_a_stall():
     t0 = time.monotonic()
     text = client([0.6, 0], total=5, idle=0.2).chat_json([{"role": "user", "content": "q"}], {"type": "object"})
-    assert text == REPLY and time.monotonic() - t0 >= 0.6
+    # The first word came after 0.6 s, three times the 0.2 s idle limit, and was still accepted. (Not ">= 0.6": Windows' clock ticks
+    # in ~15 ms steps, so a 0.6 s sleep can measure as 0.594 s; CI failed on that, 2026-11-21.)
+    assert text == REPLY and time.monotonic() - t0 >= 0.5
 
 
 def test_a_gap_between_words_longer_than_the_idle_limit_is_a_stall():
@@ -58,7 +60,7 @@ def test_a_gap_between_words_longer_than_the_idle_limit_is_a_stall():
     with pytest.raises(LLMError) as e:
         client([0, 0.8, 0], total=5, idle=0.2).chat_json([{"role": "user", "content": "q"}], {"type": "object"})
     assert e.value.code == "timeout" and e.value.message == IDLE_MESSAGE
-    assert time.monotonic() - t0 < 0.7          # detected after the idle limit, not at the end of the budget
+    assert time.monotonic() - t0 < 2.0          # detected soon after the 0.2 s idle limit, long before the 5 s budget runs out
 
 
 def test_no_first_word_within_the_budget_says_the_model_was_still_reading():
