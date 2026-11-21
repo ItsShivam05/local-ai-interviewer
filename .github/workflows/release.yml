@@ -1,5 +1,6 @@
 # Publishes a GitHub release when a maintainer pushes a version tag (v1.2.3). Runs the same checks as CI first, verifies that the
-# tag, the backend version and frontend/package.json agree, then attaches a source archive and the CHANGELOG section as notes.
+# tag, the backend version and frontend/package.json agree, then attaches a source archive (with the built UI, so it runs without
+# Node.js) and the CHANGELOG section as notes.
 # Nothing is deployed anywhere: users run the app from source. See docs/maintainers/releasing.md.
 name: Release
 
@@ -56,6 +57,16 @@ jobs:
           cat notes.md
       - name: Source archive
         run: git archive --format=zip --prefix="local-ai-interviewer-${GITHUB_REF_NAME}/" -o "local-ai-interviewer-${GITHUB_REF_NAME}.zip" HEAD
+      - name: Add the built UI, so the zip runs without Node.js
+        # frontend/dist was built by "Frontend checks" above. The .prebuilt marker tells the launcher it may use this build when
+        # Node.js is missing (scripts/manage.py, ensure_frontend); with Node.js it still rebuilds after frontend files change.
+        run: |
+          [ -f frontend/dist/index.html ] || { echo "::error::frontend/dist was not built"; exit 1; }
+          echo "$GITHUB_REF_NAME" > frontend/dist/.prebuilt
+          stage="$RUNNER_TEMP/stage"; root="local-ai-interviewer-${GITHUB_REF_NAME}"
+          mkdir -p "$stage/$root/frontend" && cp -R frontend/dist "$stage/$root/frontend/"
+          (cd "$stage" && zip -qr "$GITHUB_WORKSPACE/$root.zip" "$root/frontend/dist")
+          unzip -l "$root.zip" | grep -q "$root/frontend/dist/index.html" && unzip -l "$root.zip" | grep -q "$root/frontend/dist/.prebuilt"
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}

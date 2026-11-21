@@ -465,6 +465,46 @@ def frontend_stale() -> bool:
     return any(p.stat().st_mtime > stamp for p in watched if p.exists())
 
 
+def prebuilt_frontend() -> bool:
+    """A release zip ships the built UI with this marker (written by .github/workflows/release.yml)."""
+    dist = FRONTEND / "dist"
+    return (dist / ".prebuilt").is_file() and (dist / "index.html").is_file()
+
+
+def ensure_frontend(dev: bool) -> bool:
+    """Node.js is needed only to build the UI (or to run the dev server), not to use an up-to-date or release-built one."""
+    if not dev and not frontend_stale():
+        return True
+    nv = node_version()
+    node_ok = nv is not None and shutil.which("npm") is not None and node_supported(nv)
+    if not dev and not node_ok and prebuilt_frontend():
+        # unzipping may give every file the same time, which can make the release build look older than its sources
+        info("Using the UI built for this release (Node.js is needed only after changing frontend files).")
+        return True
+    if nv is None or not shutil.which("npm"):
+        bad(f"{NODE_REQUIREMENT} is required: {install_hint('node')}")
+        open_setup_help("node")
+        return False
+    if not node_supported(nv):
+        bad(f"{NODE_REQUIREMENT} is required (found {nv[0]}.{nv[1]}): {install_hint('node')}")
+        open_setup_help("node")
+        return False
+    npm = shutil.which("npm") or "npm"
+    if not (FRONTEND / "node_modules").is_dir():
+        info("Installing frontend dependencies (one-time, needs internet)...")
+        if subprocess.run([npm, "install", "--no-audit", "--no-fund", "--loglevel=error"], cwd=FRONTEND).returncode != 0:
+            bad("npm install failed")
+            return False
+    if not dev:
+        info("Building the frontend...")
+        with open_log("frontend-build.log", "wb") as log:
+            built = subprocess.run([npm, "run", "build", "--silent"], cwd=FRONTEND, stdout=log, stderr=subprocess.STDOUT).returncode == 0
+        if not built:
+            bad("Frontend build failed - see logs/frontend-build.log")
+            return False
+    return True
+
+
 CLOUD_HINT = "Cloud mode (Settings -> AI models) works without it."
 
 
@@ -533,31 +573,10 @@ def cmd_start(args: argparse.Namespace) -> int:
     if not python_ok():
         bad(f"Python 3.10 or newer is required (this is {platform.python_version()}): {install_hint('python')}")
         return 1
-    nv = node_version()
-    if nv is None or not shutil.which("npm"):
-        bad(f"{NODE_REQUIREMENT} is required: {install_hint('node')}")
-        open_setup_help("node")
+    if not ensure_frontend(dev):
         return 1
-    if not node_supported(nv):
-        bad(f"{NODE_REQUIREMENT} is required (found {nv[0]}.{nv[1]}): {install_hint('node')}")
-        open_setup_help("node")
-        return 1
-    npm = shutil.which("npm") or "npm"
-
     if not ensure_backend_env():
         return 1
-    if not (FRONTEND / "node_modules").is_dir():
-        info("Installing frontend dependencies (one-time, needs internet)...")
-        if subprocess.run([npm, "install", "--no-audit", "--no-fund", "--loglevel=error"], cwd=FRONTEND).returncode != 0:
-            bad("npm install failed")
-            return 1
-    if not dev and frontend_stale():
-        info("Building the frontend...")
-        with open_log("frontend-build.log", "wb") as log:
-            built = subprocess.run([npm, "run", "build", "--silent"], cwd=FRONTEND, stdout=log, stderr=subprocess.STDOUT).returncode == 0
-        if not built:
-            bad("Frontend build failed - see logs/frontend-build.log")
-            return 1
 
     if ensure_ollama():
         names = installed_models()
@@ -660,14 +679,18 @@ def cmd_check(_: argparse.Namespace) -> int:
     info(f"  Voice: {'Phonon (Apple Silicon) if installed, otherwise ' if APPLE_SILICON else ''}this computer's offline voices through the browser")
 
     nv = node_version()
-    if nv is None:
+    ui_ready = prebuilt_frontend() or not frontend_stale()
+    if nv is not None and node_supported(nv):
+        ok(f"Node {nv[0]}.{nv[1]}")
+    elif ui_ready:
+        found = "not found" if nv is None else f"{nv[0]}.{nv[1]} is too old"
+        warn(f"Node.js {found}: not needed, the UI is already built ({NODE_REQUIREMENT} only to rebuild it after changing it)")
+    elif nv is None:
         bad(f"Node.js not found: {install_hint('node')}")
         fail = 1
-    elif not node_supported(nv):
+    else:
         bad(f"{NODE_REQUIREMENT} required (found {nv[0]}.{nv[1]}): {install_hint('node')}")
         fail = 1
-    else:
-        ok(f"Node {nv[0]}.{nv[1]}")
     if python_ok():
         ok(f"Python {platform.python_version()} ({sys.executable})")
     else:
@@ -680,9 +703,11 @@ def cmd_check(_: argparse.Namespace) -> int:
         warn("Backend dependencies not installed yet (start installs them: needs internet once)")
     if (FRONTEND / "node_modules").is_dir():
         ok("Frontend dependencies installed")
-    else:
+    elif not ui_ready:
         warn("Frontend dependencies not installed yet (start installs them: needs internet once)")
-    if (FRONTEND / "dist" / "index.html").is_file():
+    if prebuilt_frontend():
+        ok("Frontend built (came with the release)")
+    elif (FRONTEND / "dist" / "index.html").is_file():
         ok("Frontend built")
     else:
         warn("Frontend not built yet (start builds it)")

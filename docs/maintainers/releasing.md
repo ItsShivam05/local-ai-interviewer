@@ -64,7 +64,8 @@ heading, for example `## [2.0.0-rc.1] - 2026-11-20`.
    git push origin vX.Y.Z
    ```
 8. **Watch the Release workflow** (Actions tab). It verifies tag, backend and frontend versions agree; runs backend tests and the
-   frontend lint, typecheck, tests and build; extracts the changelog section; builds a source `.zip` with `git archive`; and creates the
+   frontend lint, typecheck, tests and build; extracts the changelog section; builds a source `.zip` with `git archive` and adds the
+   built interface (`frontend/dist` with a `.prebuilt` marker, so the zip runs without Node.js); and creates the
    GitHub release, marking it as a pre-release if the tag contains a `-`.
 9. **Review the published release** on GitHub: notes read well, the archive is attached. Add the upgrade steps and breaking changes
    (template below) if the changelog section does not already contain them. Edit the release rather than re-tagging.

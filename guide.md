@@ -50,10 +50,15 @@ Other handy things:
 You only need this on a new computer or after deleting things. Everything below downloads from the internet **once**; after that the app works offline.
 
 1. Install **Ollama** from https://ollama.com/download and open it once (a llama icon appears in the menu bar / system tray).
-2. Install **Node.js** (the current LTS from nodejs.org; at least 20.19 or 22.12) and **Python 3.10+**:
-   * Mac: `brew install node python`
-   * Windows: `winget install OpenJS.NodeJS.LTS` and `winget install Python.Python.3.12` (when using the python.org installer, tick **Add python.exe to PATH**). Close and reopen the terminal afterwards.
-   * Linux: Node.js from https://nodejs.org (the `apt` package is usually too old), and Python with `sudo apt install python3 python3-venv`
+2. Install **Python 3.10+**:
+   * Mac: `brew install python`
+   * Windows: `winget install Python.Python.3.12` (when using the python.org installer, tick **Add python.exe to PATH**). Close and reopen the terminal afterwards.
+   * Linux: `sudo apt install python3 python3-venv`
+
+   **Node.js** is needed only if you got the app with `git clone` (or change its interface files): the zip from the
+   [latest release](https://github.com/Yuvakunaal/local-ai-interviewer/releases/latest) comes with the interface already built.
+   If you need it, install the current LTS (at least 20.19 or 22.12): Mac `brew install node`, Windows `winget install OpenJS.NodeJS.LTS`,
+   Linux from https://nodejs.org (the `apt` package is usually too old).
 3. In the terminal, in the project folder:
 
    | Mac / Linux | Windows | What it does |
@@ -69,7 +74,7 @@ You only need this on a new computer or after deleting things. Everything below 
 ## 3. Using the website — from first launch to your first interview
 
 ### Step 0 · First time? The app checks your computer for you
-When you start the app for the first time it checks what it needs. If something is missing you'll see a **"Let's get you set up"** page in the middle of the screen: it lists what to install (for example **Ollama**) with the exact steps for your computer and copy buttons, and turns green by itself when you've done it. The AI model can be downloaded right there with one click (it shows the size first and never downloads without you pressing the button). If Python or Node.js is missing, a simple page opens with the install steps before the app starts. You can also choose **Use cloud models instead** to skip the download. You can open this check again any time from **Settings → Local services → Setup check**.
+When you start the app for the first time it checks what it needs. If something is missing you'll see a **"Let's get you set up"** page in the middle of the screen: it lists what to install (for example **Ollama**) with the exact steps for your computer and copy buttons, and turns green by itself when you've done it. The AI model can be downloaded right there with one click (it shows the size first and never downloads without you pressing the button). If Python is missing (or Node.js, when the interface still has to be built), a simple page opens with the install steps before the app starts. You can also choose **Use cloud models instead** to skip the download. You can open this check again any time from **Settings → Local services → Setup check**.
 
 ### Step 1 · Check that everything is green
 Look at the bottom of the left sidebar: **Local services — All ready** with green dots for Ollama, the AI model, Voice (Phonon, or *system* on Windows/Linux) and Microphone. If a dot is red, jump to *Troubleshooting* below.

@@ -7,38 +7,54 @@
 **Private mock interviews for tech roles, graded by a local LLM on your own computer.**
 
 [![CI](https://github.com/Yuvakunaal/local-ai-interviewer/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Yuvakunaal/local-ai-interviewer/actions/workflows/ci.yml)
-[![Security](https://github.com/Yuvakunaal/local-ai-interviewer/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/Yuvakunaal/local-ai-interviewer/actions/workflows/security.yml)
+[![Latest release](https://img.shields.io/github/v/release/Yuvakunaal/local-ai-interviewer)](https://github.com/Yuvakunaal/local-ai-interviewer/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776AB.svg)
-![Node 20.19+ or 22.12+](https://img.shields.io/badge/node-20.19%2B%20%7C%2022.12%2B-339933.svg)
 ![Runs locally with Ollama](https://img.shields.io/badge/runs%20locally-Ollama-black.svg)
 
-[Quick start](#quick-start) · [Features](#features) · [How it works](#how-it-works) · [Docs](docs/README.md) · [Contributing](CONTRIBUTING.md) · [Roadmap](ROADMAP.md) · [Security](SECURITY.md)
+[Quick start](#quick-start) · [Features](#features) · [How it works](#how-it-works) · [Docs](docs/README.md) · [Contributing](CONTRIBUTING.md) · [Roadmap](ROADMAP.md)
 
+<!-- Demo: replace this screenshot with the demo video (drag the .mp4 into GitHub's README editor) or docs/assets/demo.gif. -->
 <img src="docs/assets/screenshots/interview-adaptive.png" alt="An adaptive interview asking about a project from the candidate's resume, with topic, level, strategy and time left shown above the question" width="860">
 
 </div>
 
-A personal mock-interview coach for any role in tech (software, data, cloud, security, ML, QA, DevOps and more) that runs **on your own computer** (macOS, Windows or Linux) — by default entirely offline, with an optional switch to Groq's cloud models (your own free API key) for faster, stronger grading.
-You supply the questions (or let it build them from your resume); the app asks them aloud (Phonon on Apple Silicon Macs, your computer's own offline voices everywhere else), takes your typed or spoken answer, has an LLM
-(a local Ollama model by default, or Groq cloud models with your own key if you choose) evaluate it, asks a targeted follow-up only when one is worth asking, and finishes with a scored, explained report.
+Practise interviews for any tech role (software, data, cloud, security, ML, QA, DevOps and more). The app asks your questions
+aloud, listens to your typed or spoken answer, asks a follow-up when one is worth asking, and ends with a scored report that explains
+every mark. It can also build questions from your own resume.
 
-* **Default: no cloud, no API keys, no telemetry.** The server binds to `127.0.0.1` only. Cloud models are strictly opt-in (Settings → AI models, see [§7a](#7a-groq-cloud-models-optional)) and are never used as a silent fallback.
-* All questions, answers, evaluations and reports live in a local SQLite file (`data/interviewer.sqlite3`).
-* Built and verified on a MacBook Air M2 / 8 GB RAM / macOS 26 / Chrome 156 / Ollama 0.40.12. See [Supported platforms](#2-supported-platforms) for what is and is not verified elsewhere.
+* **Private by default.** The AI runs on your own computer through [Ollama](https://ollama.com). No account, no API key, no
+  telemetry, and your answers never leave the machine.
+* **Graded with evidence.** The grader has to quote your own words for every mistake it claims. A mistake it cannot quote is shown
+  as unverified and is not counted against you. [How grading works](docs/evaluation.md)
+* **No GPU or not enough memory?** Paste a free [Groq](https://console.groq.com/keys) key and grading runs in the cloud instead,
+  with no 4 GB model download. It is off until you switch it on. [§7a](#7a-groq-cloud-models-optional)
+
+Built and tested by hand on a MacBook Air M2 (8 GB). Windows and Linux are tested in CI on every change (tests, then start, health
+check and stop), but nobody has run a full interview on them by hand yet: [your report](https://github.com/Yuvakunaal/local-ai-interviewer/issues/new/choose) helps.
+[Supported platforms](#2-supported-platforms)
 
 ## Quick start
 
+You need **Python 3.10+**, **Chrome or Edge**, and **[Ollama](https://ollama.com/download)** (not needed if you only use Groq).
+
+**1. Get the app.** Download the zip from the [latest release](https://github.com/Yuvakunaal/local-ai-interviewer/releases/latest)
+and unzip it. Its interface is already built, so Node.js is not needed. Or clone the repository; that also needs
+[Node.js](https://nodejs.org) 20.19+ or 22.12+ to build the interface on first start:
+
 ```bash
-git clone https://github.com/Yuvakunaal/local-ai-interviewer.git
-cd local-ai-interviewer
-./check.sh            # read-only prerequisite report (Windows: check.bat)
-./setup-models.sh     # shows sizes and free disk, asks before downloading the model (Windows: setup-models.bat)
-./start.sh --open     # installs dependencies on first run, builds the UI, starts http://localhost:3000 and opens it (Windows: start.bat always opens it)
+git clone https://github.com/Yuvakunaal/local-ai-interviewer.git && cd local-ai-interviewer
 ```
 
-You need Python ≥ 3.10, Node.js 20.19+ or 22.12+ (the current LTS is fine), [Ollama](https://ollama.com/download) and Chrome or Edge. Full instructions: [§4 Install and run](#4-install-and-run).
-**New here? Read [`guide.md`](guide.md)** — a simple step-by-step from setup to your first interview.
+**2. Run it** from the app folder (Windows: `check.bat`, `setup-models.bat`, `start.bat`):
+
+```bash
+./check.sh            # read-only report of what is installed and what is missing
+./setup-models.sh     # shows the download size and free disk, asks before downloading the local model (skip this for Groq only)
+./start.sh --open     # installs the Python packages on first run, starts http://localhost:3000 and opens it
+```
+
+If something is missing, the app opens a setup page that shows what to install for your system. **New here? Follow
+[`guide.md`](guide.md)**, a step-by-step from setup to your first interview. Full details: [§4 Install and run](#4-install-and-run).
 
 ## Features
 
@@ -123,8 +139,8 @@ Safety properties:
 | Platform | Status | Voice for questions |
 |---|---|---|
 | macOS, Apple Silicon (M1–M4) | **Built and fully verified** (unit, API, real-Chrome and real-model tests) | Phonon (premium, optional) or system voices |
-| Windows 10 / 11 | Implemented; **not yet run on a real Windows machine** — CI runs the backend and frontend tests and the launcher's `check` there (last run: 2026-11-18, green). A CI step for `start` → health check → `stop` through the `.bat` wrappers was written on 2026-11-20 but **has not run in CI yet** | System voices (Microsoft David, Zira, …) |
-| Linux (x86-64 / arm64) | Implemented; **not yet run on real Linux** — CI runs the backend and frontend tests and the launcher's `check` (last run: 2026-11-18, green); a `start` → health check → `stop` step was written on 2026-11-20 and **has not run in CI yet** (it passed when run by hand on macOS) | System voices if `speech-dispatcher` + `espeak-ng` are installed, otherwise text only |
+| Windows 10 / 11 | Implemented; **not yet run on a real Windows machine** — CI runs the backend and frontend tests, the launcher's `check`, and `start` → health check → `stop` through the `.bat` wrappers on every change (green since 2026-11-20) | System voices (Microsoft David, Zira, …) |
+| Linux (x86-64 / arm64) | Implemented; **not yet run on real Linux** — CI runs the backend and frontend tests, the launcher's `check`, `start` → health check → `stop`, and real-Chrome page checks on every change (green since 2026-11-20) | System voices if `speech-dispatcher` + `espeak-ng` are installed, otherwise text only |
 | macOS, Intel | Expected to work; untested (the LLM will be slow without Apple Silicon) | System voices |
 
 Resume OCR (Tesseract) is optional on every platform; typed PDF resumes need nothing extra (see §5a).
@@ -141,26 +157,27 @@ Everything else — the LLM, grading, follow-ups, reports, optional Whisper micr
 | Ollama app (https://ollama.com/download) | yes | once |
 | `qwen3.5:4b` (≈3.3–4.0 GB download) | yes | once, `./setup-models.sh` |
 | `phonon` (≈0.1 GB, Apple Silicon Macs only; skipped elsewhere) | yes | once, `./setup-models.sh` |
-| Python deps (`backend/requirements.txt`) and npm deps | yes | once, first `./start.sh` |
+| Python deps (`backend/requirements.lock`), and npm deps when building the UI from source | yes | once, first `./start.sh` |
 | Whisper `base.en` (≈0.15 GB, optional microphone) | yes | once, `./setup-models.sh --stt` |
 | Groq API key (optional, only for cloud mode) | yes | only while cloud mode is on; see §7a |
 | **Everything else — running interviews, speech, evaluation, reports (local mode)** | **no** | **works offline** |
 
 In local mode the backend sets `HF_HUB_OFFLINE=1`, refuses non-loopback Ollama URLs, and the UI loads nothing from a CDN: its one font (Inter, SIL Open Font License 1.1) is bundled with the app.
 
-Required on every platform: Node.js 20.19+ or 22.12+ (the current LTS; Linux distribution packages are often older — use nodejs.org), Python ≥ 3.10, [Ollama](https://ollama.com/download), and Chrome or Edge. About 5 GB free disk and 8 GB RAM (see §7).
+Required on every platform: Python ≥ 3.10, [Ollama](https://ollama.com/download) (for local mode), and Chrome or Edge. About 5 GB free disk and 8 GB RAM (see §7).
+Node.js 20.19+ or 22.12+ (the current LTS; Linux distribution packages are often older — use nodejs.org) is needed only to build the interface: with a git clone, or after changing frontend files. A release zip from v2.0.2 on already contains the built interface.
 
 ## 4. Install and run
 
 **macOS / Linux** (Terminal):
 
 ```bash
-git clone https://github.com/Yuvakunaal/local-ai-interviewer.git   # or Code → Download ZIP on GitHub
+git clone https://github.com/Yuvakunaal/local-ai-interviewer.git   # or the zip from the latest release (no Node.js needed)
 cd local-ai-interviewer
 ./check.sh                                 # read-only prerequisite report
 ./setup-models.sh                          # shows sizes + free disk, asks before pulling qwen3.5:4b (and phonon on Apple Silicon)
 ./setup-models.sh --stt                    # OPTIONAL: offline Whisper for microphone answers
-./start.sh                                 # installs deps on first run, builds the UI, starts everything
+./start.sh                                 # installs deps on first run, builds the UI if needed, starts everything
 ```
 
 **Windows** (Command Prompt or PowerShell; in PowerShell prefix each command with `.\`):
@@ -179,10 +196,10 @@ depends on your connection (not measured here; the model was already installed).
 repository: `PIP_CACHE_DIR=$(mktemp -d) UV_CACHE_DIR=$(mktemp -d) npm_config_cache=$(mktemp -d) time ./start.sh`.
 
 You can also double-click `start.bat` in File Explorer; the window stays open so you can read the messages.
-Prerequisites on Windows: `winget install OpenJS.NodeJS.LTS`, `winget install Python.Python.3.12` (tick *Add python.exe to PATH*), and Ollama from <https://ollama.com/download/windows>.
+Prerequisites on Windows: `winget install Python.Python.3.12` (tick *Add python.exe to PATH*) and Ollama from <https://ollama.com/download/windows>; for a git clone also `winget install OpenJS.NodeJS.LTS`.
 
 **What a first-time user sees.** `./start.sh --open` (or `start.bat`, which always opens it) opens the app in the browser — plain `./start.sh` starts it and prints the address — and the app checks the computer first:
-* If **Python** or **Node.js** is missing, nothing can run yet, so the launcher opens a plain local page (`scripts/setup-required.html`, no server, nothing from the internet) with the exact install steps for that system (macOS / Windows / Linux), then you run the start command again.
+* If **Python** is missing, or **Node.js** is missing while the interface still has to be built, nothing can run yet, so the launcher opens a plain local page (`scripts/setup-required.html`, no server, nothing from the internet) with the exact install steps for that system (macOS / Windows / Linux), then you run the start command again.
 * Once the app is up, it opens on a **setup page in the middle of the screen** whenever the local AI is not ready: it lists what is missing (**Ollama** not installed / not running, the **interview model** not downloaded), how to install it with copyable commands, and updates itself the moment you fix it. The model downloads with **one click** (size shown first, nothing starts until you press it) with a progress bar, Cancel and Retry. Voice and microphone are shown as optional extras.
 * From that page you can also choose **Use cloud models instead** (no download) or **Continue anyway**. With everything installed the page never appears; *Settings → Local services → Setup check* opens it again any time.
 
