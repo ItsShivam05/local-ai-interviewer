@@ -139,3 +139,24 @@ def test_each_lock_covers_its_requirements_and_hashes_every_pin(source, lock):
     for block in re.split(r"\n(?=[A-Za-z0-9])", text.split("\n", 3)[-1]):
         if "==" in block:
             assert "--hash=sha256:" in block, f"no hash for {block.splitlines()[0]}"
+
+
+@pytest.mark.parametrize("source,lock", [("requirements.txt", "requirements.lock"), ("requirements-dev.txt", "requirements-dev.lock"),
+                                         ("requirements.txt", "requirements-dev.lock")])
+def test_each_locked_version_is_allowed_by_its_requirements(source, lock):
+    """Names alone are not enough: Dependabot PR #3 raised reportlab to >=5.1 in requirements.txt while the lock still pinned 4.5.1,
+    so CI (which installs the lock) went green without ever running reportlab 5."""
+    from packaging.requirements import Requirement
+
+    backend = ROOT / "backend"
+    pins: dict[str, list[str]] = {}
+    for m in re.finditer(r"^([A-Za-z0-9._-]+)==([^\s;\\]+)", (backend / lock).read_text(encoding="utf-8"), re.M):
+        pins.setdefault(m.group(1).lower().replace("_", "-"), []).append(m.group(2))
+    for line in (backend / source).read_text(encoding="utf-8").splitlines():
+        line = line.split("#")[0].strip()
+        if not line or line.startswith("-"):
+            continue
+        req = Requirement(line)
+        for version in pins.get(req.name.lower().replace("_", "-"), []):
+            assert req.specifier.contains(version, prereleases=True), \
+                f"{lock} pins {req.name}=={version}, outside {source}'s '{req.specifier}': regenerate the lock (see its header)"
