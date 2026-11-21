@@ -25,8 +25,9 @@ and state transitions.
 
 - **Static type checking for the backend** (mypy or pyright), introduced gradually so it does not block unrelated work.
   **[contributors welcome]**
-- **Frontend component tests** for the Setup, Report and ResumeDetail pages (the current frontend tests cover helpers and a few
-  components; the pages are exercised by the real-Chrome scripts in `frontend/e2e`). **[contributors welcome]**
+- **Frontend page tests** for the remaining pages, starting with ResumeDetail. Setup, Report and Interview have page tests that run
+  against recorded backend responses; the other pages are exercised only by the real-Chrome scripts in `frontend/e2e`.
+  **[contributors welcome]**
 - **Accessibility audit with a screen reader** (VoiceOver, NVDA). The existing sweeps check unnamed controls, contrast and overflow
   automatically; they do not replace listening to the interface. **[contributors welcome]**
 - Keep the line-coverage figure honest: it was 94 % on 2026-11-15 and should not fall without a reason.
