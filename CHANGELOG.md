@@ -5,11 +5,28 @@ All notable changes to this project. Format: [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-11-21
+
+Bug fix for Windows and dependency updates. No database, setting or score changes; upgrading needs no action.
+
 ### Fixed
 - Launcher on Windows: with Ollama not installed or not running, `start` could report "Backend did not answer within 90 s" although
   the app was running. Its health probe gave up after 2 s, and on Windows `/api/health` takes about that long when Ollama is absent
   (Windows needs ~2 s to refuse a connection to a closed local port). The probe now allows 10 s. Seen in CI on 2026-11-20 (passed 2
   runs, failed 1); the CI diagnosis showed the backend answering normally when started by hand. Test: `test_launcher.py`.
+
+### Dependencies
+- PDF reports: reportlab 4.5 → 5.1 (`requirements.txt` and both hash locks). The full backend test suite, including the PDF report
+  tests, passes on 5.1. An existing install keeps working on 4.5; to match the lock exactly, run
+  `backend/.venv/bin/pip install --require-hashes -r backend/requirements.lock` (Windows: `backend\.venv\Scripts\pip ...`).
+- Minimum versions raised: httpx ≥ 0.28.1, faster-whisper ≥ 1.2.1 (optional speech-to-text), pip-audit ≥ 2.10.1 (development).
+- Frontend development tools: ESLint 10, jsdom 31, @testing-library/jest-dom 7 and a group of smaller updates. They are used only for
+  tests and linting; the built app is unchanged.
+
+### Development
+- A test now fails when a hash lock pins a version that its requirements file does not allow (a Dependabot PR had raised reportlab in
+  `requirements.txt` while CI, which installs the lock, still tested 4.5).
+- Two timing assertions in `test_llm_timeouts.py` no longer fail on Windows, whose clock advances in ~15 ms steps.
 
 ## [2.0.0] - 2026-11-21
 

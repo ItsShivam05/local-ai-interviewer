@@ -1,7 +1,6 @@
 # Releasing
 
-How versions are numbered and how a release is made. There are no git tags or published releases yet; the first release will follow
-this procedure. Releases are automated by [`.github/workflows/release.yml`](../../.github/workflows/release.yml). Nothing is deployed:
+How versions are numbered and how a release is made. The first release made with this procedure was v2.0.0 (2026-11-21). Releases are automated by [`.github/workflows/release.yml`](../../.github/workflows/release.yml). Nothing is deployed:
 users run the app from source, so a release is a tag, a source archive and release notes.
 
 ## Versioning policy
