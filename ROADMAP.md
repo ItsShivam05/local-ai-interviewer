@@ -41,9 +41,10 @@ and state transitions.
 
 ## Distribution
 
-- **Packaging** so users do not need Python and Node installed separately. This is an idea, not a plan; any packaging must keep
-  the local-only guarantees and not add a silent update check.
-- **First tagged release.** There are no git tags or published releases yet. The procedure is in
+- **Packaging** so users do not need Python installed separately. Since 2.0.2 the release zip contains the built interface, so
+  Node.js is no longer needed to run it. This is an idea, not a plan; any packaging must keep the local-only guarantees and not
+  add a silent update check.
+- **Releases** are tagged and published by a workflow since v2.0.0; the procedure is in
   [docs/maintainers/releasing.md](docs/maintainers/releasing.md).
 
 ## Not planned

@@ -19,7 +19,7 @@ Windows: `start.bat --dev`. In the commands below use `backend\.venv\Scripts\pyt
 `$env:RUN_INTEGRATION = "1"` (PowerShell).
 
 Backend: Python >= 3.10, dependencies in `backend/requirements*.txt` (a virtualenv is created in `backend/.venv` by `start.sh`).
-Frontend: Node 22.12+ for development (the frontend tests need it; running the app needs 20.19+ or 22.12+), then `cd frontend && npm ci`.
+Frontend: Node 22.12+ for development (the frontend tests need it; building the interface needs 20.19+ or 22.12+, and a release zip needs no Node at all), then `cd frontend && npm ci`.
 
 ## Before you open a pull request
 

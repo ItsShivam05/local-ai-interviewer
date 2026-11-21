@@ -5,6 +5,19 @@ All notable changes to this project. Format: [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [2.0.2] - 2026-11-21
+
+Easier install: the release zip runs without Node.js. No database, setting or score changes; upgrading needs no action.
+
+### Changed
+- The release zip now contains the built interface, so a release download needs only Python (plus Ollama for local mode, or a Groq
+  key). Node.js is needed only for a git clone or after changing frontend files; with Node.js installed the launcher still rebuilds
+  the interface when its files change, as before.
+- `start` asks for Node.js only when the interface actually has to be built (or for `--dev`); an up-to-date build no longer needs
+  it. `check` reports a missing Node.js as a warning, not a failure, when the interface is already built.
+- README: a shorter opening (what it is, why it is different, a quick start with the release zip and the Groq option), and the
+  platform table now says that CI runs start, health check and stop on Windows and Linux (green since 2026-11-20).
+
 ## [2.0.1] - 2026-11-21
 
 Bug fix for Windows and dependency updates. No database, setting or score changes; upgrading needs no action.

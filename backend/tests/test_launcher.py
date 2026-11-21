@@ -152,6 +152,65 @@ def test_frontend_staleness_follows_source_and_public_files(m, tmp_path, monkeyp
     assert m.frontend_stale() is True                  # nothing built yet
 
 
+def _frontend(m, tmp_path, monkeypatch, *, built: bool, prebuilt: bool = False, stale: bool = False):
+    monkeypatch.setattr(m, "FRONTEND", tmp_path)
+    for d in ("src", "public", "dist"):
+        (tmp_path / d).mkdir(exist_ok=True)
+    src = tmp_path / "src" / "a.ts"
+    src.write_text("x")
+    if built:
+        (tmp_path / "dist" / "index.html").write_text("<html/>")
+    if prebuilt:
+        (tmp_path / "dist" / ".prebuilt").write_text("v2.0.2\n")
+    now = time.time()
+    os.utime(src, (now + 50, now + 50) if stale else (now - 100, now - 100))
+    ran: list = []
+    monkeypatch.setattr(m.subprocess, "run", lambda cmd, **kw: ran.append(cmd) or type("R", (), {"returncode": 0})())
+    monkeypatch.setattr(m, "open_setup_help", lambda need: None)
+    return ran
+
+
+def test_an_up_to_date_ui_needs_no_node(m, tmp_path, monkeypatch):
+    ran = _frontend(m, tmp_path, monkeypatch, built=True)
+    monkeypatch.setattr(m, "node_version", lambda: None)
+    assert m.ensure_frontend(dev=False) is True and ran == []
+
+
+def test_a_release_built_ui_is_used_without_node_even_if_unzipping_made_it_look_old(m, tmp_path, monkeypatch, capsys):
+    ran = _frontend(m, tmp_path, monkeypatch, built=True, prebuilt=True, stale=True)
+    monkeypatch.setattr(m, "node_version", lambda: None)
+    assert m.ensure_frontend(dev=False) is True and ran == []
+    assert "built for this release" in capsys.readouterr().out
+
+
+def test_with_node_a_changed_release_ui_is_rebuilt(m, tmp_path, monkeypatch):
+    ran = _frontend(m, tmp_path, monkeypatch, built=True, prebuilt=True, stale=True)
+    (tmp_path / "node_modules").mkdir()
+    monkeypatch.setattr(m, "node_version", lambda: (22, 12))
+    monkeypatch.setattr(m.shutil, "which", lambda name: f"/usr/bin/{name}")
+    assert m.ensure_frontend(dev=False) is True
+    assert len(ran) == 1 and ran[0][1:] == ["run", "build", "--silent"]
+
+
+@pytest.mark.parametrize("built", [False, True])
+def test_without_node_an_unbuilt_or_changed_source_ui_still_needs_node(m, tmp_path, monkeypatch, built, capsys):
+    ran = _frontend(m, tmp_path, monkeypatch, built=built, stale=True)
+    monkeypatch.setattr(m, "node_version", lambda: None)
+    assert m.ensure_frontend(dev=False) is False and ran == []
+    assert "Node.js" in capsys.readouterr().out
+
+
+def test_the_dev_server_always_needs_node(m, tmp_path, monkeypatch):
+    _frontend(m, tmp_path, monkeypatch, built=True, prebuilt=True)
+    monkeypatch.setattr(m, "node_version", lambda: None)
+    assert m.ensure_frontend(dev=True) is False
+
+
+def test_the_release_zip_ships_the_built_ui_with_its_marker():
+    wf = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    assert "frontend/dist/.prebuilt" in wf and "frontend/dist" in wf
+
+
 def test_wrappers_exist_for_every_command_on_every_os():
     for name in ("start", "stop", "check", "setup-models"):
         sh = (ROOT / f"{name}.sh").read_text(encoding="utf-8")
